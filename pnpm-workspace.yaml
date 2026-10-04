@@ -3,9 +3,8 @@ packages:
   - 'services/*'
   - 'apps/*'
 
+# Явне рішення щодо кожного build-скрипта. Без цього pnpm 12 падає з
+# ERR_PNPM_IGNORED_BUILDS у неінтерактивному оточенні, наприклад у Docker.
 allowBuilds:
-  esbuild: true
-
-# телеметрія — build-скрипт свідомо не дозволяємо
-ignoredBuiltDependencies:
-  - '@scarf/scarf'
+  esbuild: true          # потрібен vitest
+  '@scarf/scarf': false  # телеметрія, свідомо не запускаємо

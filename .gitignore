@@ -1,0 +1,25 @@
+# залежності та збірки
+node_modules/
+dist/
+build/
+coverage/
+.pnpm-store/
+
+# збірка фронтенду, яку віддає Nest
+services/api/static/
+
+# секрети — ніколи не комітити
+.env
+.env.*
+!.env.example
+*.pem
+*-key.json
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# логи та службове
+*.log
+.DS_Store

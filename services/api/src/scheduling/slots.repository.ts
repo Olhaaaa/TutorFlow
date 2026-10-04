@@ -163,6 +163,50 @@ export class SlotsRepository {
     return rows;
   }
 
+  /**
+   * Закріпити за студентом усі МАЙБУТНІ вільні слоти, що відповідають його
+   * постійному місцю в розкладі. Порівняння йде за локальним часом викладача,
+   * тому після переходу на зимовий час «щосереди о 16:00» лишається 16:00.
+   *
+   * Якщо якийсь зі слотів перетинається з уже зайнятим, UPDATE впаде на
+   * slots_no_overlap — і це правильна поведінка: тримати місце, що накладається
+   * на інше заняття, не можна.
+   */
+  async claimForEnrollment(
+    params: { enrollmentId: number; studentId: number; teacherId: number; weekday: number; startTime: string },
+    tx?: Executor,
+  ) {
+    const res = await sql<{ id: number }>`
+      update slots s
+         set status = 'pre_booked',
+             student_id = ${params.studentId},
+             enrollment_id = ${params.enrollmentId},
+             hold_expires_at = s.start_at - make_interval(hours => t.payment_deadline_hours)
+        from teachers t
+       where t.id = s.teacher_id
+         and s.teacher_id = ${params.teacherId}
+         and s.status = 'free'
+         and s.start_at > now()
+         and extract(dow from s.start_at at time zone t.timezone) = ${params.weekday}
+         and (s.start_at at time zone t.timezone)::time = ${params.startTime}::time
+      returning s.id
+    `.execute(this.db(tx));
+    return res.rows.length;
+  }
+
+  /** Зняти закріплення: майбутні неоплачені слоти знову стають вільними. */
+  async releaseEnrollmentSlots(enrollmentId: number, tx?: Executor) {
+    const rows = await this.db(tx)
+      .updateTable('slots')
+      .set({ status: 'free', student_id: null, enrollment_id: null, hold_expires_at: null })
+      .where('enrollment_id', '=', enrollmentId)
+      .where('status', '=', 'pre_booked')
+      .where('start_at', '>', new Date())
+      .returning(['id'])
+      .execute();
+    return rows.length;
+  }
+
   /** Закрити проведені заняття. Фонова задача з лабораторної 2. */
   async completePast(now: Date, tx?: Executor) {
     const rows = await this.db(tx)

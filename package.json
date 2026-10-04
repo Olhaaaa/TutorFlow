@@ -2,7 +2,9 @@
   "name": "cloud-labs-tutorflow",
   "private": true,
   "packageManager": "pnpm@12.9.1",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "api:dev": "pnpm --filter api start:dev",
     "web:dev": "pnpm --filter web dev",

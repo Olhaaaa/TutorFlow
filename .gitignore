@@ -23,3 +23,14 @@ services/api/static/
 # логи та службове
 *.log
 .DS_Store
+
+# чернетки й службові файли — у коміти не йдуть
+/docs/onboarding-*.md
+/docs/setup-*.sh
+CLAUDE.md
+.claude/
+/compose.dev.yml.local
+
+# README додається окремо, коли буде готовий текст.
+# Прибрати цей рядок разом із ним:
+/README.md

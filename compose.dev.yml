@@ -1,0 +1,23 @@
+# Локальна база для розробки. Повний набір контейнерів — у lab2-compose/.
+# Версія Postgres збігається з Neon, щоб SQL і міграції поводились однаково.
+name: tutorflow-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: tutorflow
+      POSTGRES_USER: tutorflow
+      POSTGRES_PASSWORD: tutorflow
+    ports:
+      - "5432:5432"      # 5433 зайнятий іншим курсом, 5432 вільний
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tutorflow -d tutorflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

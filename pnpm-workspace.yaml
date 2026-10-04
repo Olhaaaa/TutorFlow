@@ -5,3 +5,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+
+# телеметрія — build-скрипт свідомо не дозволяємо
+ignoredBuiltDependencies:
+  - '@scarf/scarf'

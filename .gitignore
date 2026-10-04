@@ -25,8 +25,7 @@ services/api/static/
 .DS_Store
 
 # чернетки й службові файли — у коміти не йдуть
-/docs/onboarding-*.md
-/docs/setup-*.sh
+/docs/
 CLAUDE.md
 .claude/
 /compose.dev.yml.local

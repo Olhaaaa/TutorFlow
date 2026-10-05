@@ -19,6 +19,28 @@ export class StudentsRepository {
     );
   }
 
+  /** Для входу: разом із хешем пароля, тому назовні не віддається. */
+  async updateTimezone(id: number, timezone: string, tx?: Executor) {
+    const row = await this.db(tx)
+      .updateTable('students')
+      .set({ timezone })
+      .where('id', '=', id)
+      .returning(['id', 'name', 'timezone'])
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  async byEmailWithSecret(email: string, tx?: Executor) {
+    return (
+      (await this.db(tx)
+        .selectFrom('students')
+        .select(['id', 'teacher_id', 'name', 'email', 'password_hash', 'timezone'])
+        .where('email', '=', email)
+        .executeTakeFirst()) ?? null
+    );
+  }
+
   async listByTeacher(teacherId: number, tx?: Executor) {
     return this.db(tx)
       .selectFrom('students')

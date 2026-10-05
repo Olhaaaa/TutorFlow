@@ -4,12 +4,12 @@ import {
 import type { StudentContext } from '../scheduling/scheduling.service.js';
 
 /**
- * МЕЖА З МОДУЛЕМ АВТЕНТИФІКАЦІЇ. Він реалізується окремо, тому тут лише контракт:
- * guard автентифікації мусить покласти в запрос `student` або `teacher`.
+ * Контракт автентифікації: guard кладе в запрос `student` або `teacher`,
+ * обробники читають їх через ці декоратори.
  *
- * Поки guard не зʼявився, у не-продакшн оточенні працює підміна через
- * заголовки — щоб розклад можна було перевіряти без чекання. У продакшні
- * підміна вимкнена й запрос отримує 401.
+ * Додатково, у НЕ-продакшн оточенні працює підміна через заголовки — зручно
+ * для ручних перевірок і для curl без входу. У продакшні вона вимкнена
+ * перевіркою NODE_ENV, тому випадково туди не поїде.
  */
 export interface AuthenticatedRequest {
   student?: StudentContext;
@@ -50,5 +50,21 @@ export const CurrentTeacher = createParamDecorator(
     throw new UnauthorizedException(
       'потрібна автентифікація викладача — очікується guard автентифікації',
     );
+  },
+);
+
+/** Хто зараз у запросі, незалежно від ролі. Для /me. */
+export interface CurrentUserInfo {
+  id: number;
+  role: 'student' | 'teacher';
+  teacherId: number;
+}
+
+export const CurrentUser = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): CurrentUserInfo | null => {
+    const req = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
+    if (req.teacher) return { id: req.teacher.id, role: 'teacher', teacherId: req.teacher.id };
+    if (req.student) return { id: req.student.id, role: 'student', teacherId: req.student.teacherId };
+    return null;
   },
 );

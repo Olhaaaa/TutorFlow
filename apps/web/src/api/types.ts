@@ -113,3 +113,10 @@ export interface PaymentConnection {
   /** Чи налаштоване шифрування на сервері. */
   canConnect: boolean;
 }
+
+/** Що змінив прохід переходів станів за часом. */
+export interface MaintenanceResult {
+  holdsExpired: number;
+  lessonsCompleted: number;
+  paymentsExpired: number;
+}

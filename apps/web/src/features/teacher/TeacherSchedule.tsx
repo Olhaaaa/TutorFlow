@@ -89,6 +89,7 @@ export function TeacherSchedule({ session }: { session: Session }) {
   const [slots, setSlots] = useState<TeacherSlotView[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const anchor = useMemo(() => weekAnchor(cursor, tz), [cursor, tz]);
   const days = useMemo(() => weekDays(anchor), [anchor]);
@@ -136,6 +137,33 @@ export function TeacherSchedule({ session }: { session: Session }) {
     }
   };
 
+  /**
+   * Переходи, які робить час, застосовуються й самі, за таймером. Кнопка
+   * потрібна, щоб не чекати його під час показу.
+   */
+  const applyDue = async () => {
+    setRefreshing(true);
+    try {
+      const r = await api.teacher.maintenance(session.token);
+      const changed = r.holdsExpired + r.lessonsCompleted + r.paymentsExpired;
+      if (changed === 0) {
+        toast.success('Усе актуальне', { description: 'Переходів, час яких настав, не знайшлось' });
+      } else {
+        toast.success('Стани оновлено', {
+          description:
+            `звільнено закріплень: ${r.holdsExpired}, `
+            + `проведено занять: ${r.lessonsCompleted}, `
+            + `протерміновано рахунків: ${r.paymentsExpired}`,
+        });
+      }
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader className="gap-1">
@@ -156,8 +184,18 @@ export function TeacherSchedule({ session }: { session: Session }) {
         </CardDescription>
         <CardAction className="flex flex-wrap items-center gap-1">
           <Button variant="outline" size="sm" disabled={generating} onClick={generate}>
-            {generating ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
+            {generating ? <Loader2 className="animate-spin" aria-hidden /> : <CalendarPlus aria-hidden />}
             згенерувати слоти
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={refreshing}
+            onClick={applyDue}
+            title="Звільнити неоплачені закріплення й закрити проведені заняття"
+          >
+            {refreshing ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
+            оновити стани
           </Button>
           <Button
             variant="outline"

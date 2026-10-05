@@ -5,6 +5,7 @@ import { DatabaseModule } from './db/database.module.js';
 import { HealthController } from './health/health.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BillingModule } from './billing/billing.module.js';
+import { MaintenanceModule } from './maintenance/maintenance.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 
@@ -20,6 +21,7 @@ import { SchedulingModule } from './scheduling/scheduling.module.js';
     SchedulingModule,
     BillingModule,
     PaymentsModule,
+    MaintenanceModule,
     AuthModule,
     // Збірка фронтенду віддається тим самим процесом: одна одиниця
     // розгортання й жодних питань із CORS. exclude обовʼязковий — без нього

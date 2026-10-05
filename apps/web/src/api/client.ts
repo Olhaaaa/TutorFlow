@@ -1,6 +1,7 @@
 import type {
   AuditResult, AvailabilityRule, BookResult, CancelResult, GenerateResult,
-  PaymentConnection, PaymentView, SlotView, Student, TeacherSlotView, TopupResult,
+  MaintenanceResult, PaymentConnection, PaymentView, SlotView, Student,
+  TeacherSlotView, TopupResult,
 } from './types.js';
 
 /**
@@ -186,6 +187,10 @@ export const api = {
 
     disconnectPayments: (t: string) =>
       request<PaymentConnection>('/payments/teacher/connection', t, { method: 'DELETE' }),
+
+    /** Застосувати переходи станів, час яких уже настав. */
+    maintenance: (t: string) =>
+      request<MaintenanceResult>('/teacher/maintenance', t, { method: 'POST' }),
 
     generate: (t: string, weeks: number) =>
       request<GenerateResult>('/teacher/slots:generate', t, {

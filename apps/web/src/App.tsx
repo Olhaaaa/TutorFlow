@@ -1,12 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ApiError, api, loadIdentity, saveIdentity, type Identity } from './api/client.js';
-import type { SlotView } from './api/types.js';
-import { Calendar } from './features/calendar/Calendar.js';
-import { addDays, startOfWeek } from './features/calendar/time.js';
-import { Styleguide } from './routes/Styleguide.js';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { GraduationCap, LogOut, Palette } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  ApiError,
+  api,
+  clearSession,
+  loadSession,
+  saveSession,
+  type Balance,
+  type Session,
+} from '@/api/client';
+import type { SlotView } from '@/api/types';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { BalanceCard } from '@/features/balance/BalanceCard';
+import { PaymentReturn, TopupCard } from '@/features/balance/Topup';
+import { TimezoneCard } from '@/features/profile/TimezoneCard';
+import { Calendar } from '@/features/calendar/Calendar';
+import { addDays, dayKey, weekAnchor, weekDays } from '@/features/calendar/time';
+import { Login } from '@/routes/Login';
+import { TeacherHome } from '@/routes/TeacherHome';
+import { Styleguide } from '@/routes/Styleguide';
 
-/** Найпростіша маршрутизація, якої вистачає на два екрани: читаємо хеш і
- *  слухаємо його зміну. Бібліотека маршрутизації тут була б надміром. */
+/** Маршрутизації на два екрани вистачає хеша; бібліотека тут була б надміром. */
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash);
   useEffect(() => {
@@ -18,127 +34,185 @@ function useHash(): string {
 }
 
 export function App() {
-  const [identity, setIdentity] = useState<Identity | null>(loadIdentity);
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [session, setSession] = useState<Session | null>(loadSession);
+  const [cursor, setCursor] = useState(() => new Date());
+  // «Зараз» тримаємо у стані й оновлюємо разом із даними: інакше кожен
+  // перемальовок давав би новий момент, і підсвітка «сьогодні» та позначка
+  // «минуло» залежали б від того, коли React вирішив перерендерити.
+  const [now, setNow] = useState(() => new Date());
   const [slots, setSlots] = useState<SlotView[]>([]);
+  const [balance, setBalance] = useState<Balance | null>(null);
   const [loading, setLoading] = useState(false);
   const [actingId, setActingId] = useState<number | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const styleguide = useHash() === '#styleguide';
+  const hash = useHash();
+  const styleguide = hash === '#styleguide';
+  // Провайдер повертає користувача на #payment-<id>: за ним екран розуміє,
+  // статус якого платежу опитувати.
+  const returnedPayment = /^#payment-(\d+)$/.exec(hash)?.[1];
+
+  const tz = session?.timezone ?? 'UTC';
+  const anchor = useMemo(() => weekAnchor(cursor, tz), [cursor, tz]);
+
+  /** Зона змінилась — сесію треба оновити й у памʼяті, і у сховищі. */
+  const changeTimezone = useCallback((timezone: string) => {
+    setSession((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, timezone };
+      saveSession(next);
+      return next;
+    });
+  }, []);
+
+  const signOut = useCallback(() => {
+    clearSession();
+    setSession(null);
+    setSlots([]);
+    setBalance(null);
+  }, []);
+
+  /** Прострочений токен не має залишати користувача на порожньому екрані. */
+  const handle = useCallback(
+    (e: unknown): string => {
+      if (e instanceof ApiError && e.status === 401) {
+        signOut();
+        return 'сесія завершилась, увійдіть знову';
+      }
+      return e instanceof ApiError ? e.message : String(e);
+    },
+    [signOut],
+  );
 
   const reload = useCallback(async () => {
-    if (!identity) return;
+    // Кабінет викладача вантажить свої дані сам, а /slots вимагає студента:
+    // без цієї перевірки викладач отримував 401 і вилітав на форму входу.
+    if (!session || session.role !== 'student') return;
     setLoading(true);
-    setNotice(null);
+    setNow(new Date());
     try {
-      setSlots(await api.slots(identity, weekStart, addDays(weekStart, 7)));
+      // Беремо на добу ширше з обох боків: межі тижня в зоні студента не
+      // збігаються з UTC, і без запасу крайні заняття зникали б із сітки.
+      const [s, b] = await Promise.all([
+        api.slots(session.token, addDays(anchor, -1), addDays(anchor, 8)),
+        session.role === 'student' ? api.balance(session.token) : Promise.resolve(null),
+      ]);
+      setSlots(s);
+      setBalance(b);
     } catch (e) {
-      setNotice(e instanceof ApiError ? `не вдалось завантажити: ${e.message}` : String(e));
+      toast.error(handle(e));
       setSlots([]);
     } finally {
       setLoading(false);
     }
-  }, [identity, weekStart]);
+  }, [session, anchor, handle]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  // Зайве з запасу відсікаємо тут, щоб сітка й лічильник вільних занять
+  // рахували рівно показаний тиждень.
+  const visible = useMemo(() => {
+    const keys = new Set(weekDays(anchor).map((d) => dayKey(d, tz)));
+    return slots.filter((s) => keys.has(dayKey(s.startAt, tz)));
+  }, [slots, anchor, tz]);
 
   const act = async (slot: SlotView) => {
-    if (!identity) return;
+    if (!session) return;
     setActingId(slot.id);
-    setNotice(null);
     try {
       if (slot.state === 'free') {
-        const r = await api.book(identity, slot.id);
-        setNotice(
-          r.paid
-            ? 'заняття оплачене'
-            : 'місце закріплене, лишилось оплатити',
-        );
+        const r = await api.book(session.token, slot.id);
+        if (r.paid) toast.success('Заняття оплачене з балансу');
+        else toast.success('Місце закріплене', { description: 'Лишилось оплатити заняття' });
       } else {
-        const r = await api.cancel(identity, slot.id);
-        setNotice(r.refunded ? 'скасовано, кошти повернуто' : 'скасовано');
+        const r = await api.cancel(session.token, slot.id);
+        if (r.refunded) toast.success('Скасовано', { description: 'Кошти повернуто на баланс' });
+        else toast.success('Скасовано');
       }
       await reload();
     } catch (e) {
-      setNotice(
-        e instanceof ApiError && e.status === 501
-          ? 'білінг ще не підключений — бронювання стане доступним разом із ним'
-          : e instanceof ApiError
-            ? e.message
-            : String(e),
-      );
+      toast.error(handle(e));
     } finally {
       setActingId(null);
     }
   };
 
-  if (styleguide) {
+  if (!session) {
     return (
-      <main className="shell">
-        <a className="shell__back" href="#">← до календаря</a>
-        <Styleguide />
-      </main>
+      <Login
+        onReady={(s) => {
+          saveSession(s);
+          setSession(s);
+          toast.success(`Вітаємо, ${s.name}`);
+        }}
+      />
     );
   }
 
-  if (!identity) return <IdentityForm onReady={(id) => { saveIdentity(id); setIdentity(id); }} />;
-
   return (
-    <main className="shell">
-      <header className="shell__top">
-        <h1>Tutorflow</h1>
-        <nav>
-          <a href="#styleguide">стани слота</a>
-          <button onClick={() => { localStorage.clear(); setIdentity(null); }}>змінити користувача</button>
-        </nav>
+    <div className="min-h-dvh">
+      <header className="bg-background/85 sticky top-0 z-40 border-b backdrop-blur">
+        <div className="mx-auto flex max-w-[110rem] items-center gap-2 px-6 py-3">
+          <a href="#" className="flex items-center gap-2 font-semibold">
+            <GraduationCap className="size-5 text-primary" aria-hidden />
+            Tutorflow
+          </a>
+
+          <div className="ml-auto flex items-center gap-2">
+            <span className="hidden text-sm sm:inline">{session.name}</span>
+            <Badge variant="secondary">
+              {session.role === 'student' ? 'студент' : 'викладач'}
+            </Badge>
+            <Button variant="ghost" size="icon-sm" asChild title="Стани слота">
+              <a href="#styleguide" aria-label="Стани слота">
+                <Palette aria-hidden />
+              </a>
+            </Button>
+            <Button variant="outline" size="sm" onClick={signOut}>
+              <LogOut aria-hidden />
+              <span className="hidden sm:inline">вийти</span>
+            </Button>
+          </div>
+        </div>
       </header>
 
-      {notice && <p className="shell__notice">{notice}</p>}
-
-      <Calendar
-        weekStart={weekStart}
-        slots={slots}
-        loading={loading}
-        actingId={actingId}
-        onAct={act}
-        onWeekShift={(d) => setWeekStart((w) => addDays(w, d * 7))}
-      />
-    </main>
-  );
-}
-
-/**
- * Тимчасовий вибір користувача. Справжній вхід зʼявиться разом із
- * автентифікацією; тоді цей компонент замінить форма з поштою й паролем, а
- * решта застосунку не змінюється — ідентичність усюди йде через api/client.
- */
-function IdentityForm({ onReady }: { onReady: (id: Identity) => void }) {
-  const [studentId, setStudentId] = useState('1');
-  const [teacherId, setTeacherId] = useState('1');
-
-  return (
-    <main className="shell shell--narrow">
-      <h1>Tutorflow</h1>
-      <p className="shell__hint">
-        Вхід ще не реалізований. Поки вкажіть, від чийого імені дивитись календар.
-      </p>
-      <form
-        className="idform"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onReady({ studentId: Number(studentId), teacherId: Number(teacherId) });
-        }}
-      >
-        <label>
-          студент
-          <input value={studentId} onChange={(e) => setStudentId(e.target.value)} inputMode="numeric" />
-        </label>
-        <label>
-          викладач
-          <input value={teacherId} onChange={(e) => setTeacherId(e.target.value)} inputMode="numeric" />
-        </label>
-        <button type="submit">Відкрити календар</button>
-      </form>
-    </main>
+      <main className="mx-auto max-w-[110rem] px-6 py-4">
+        {styleguide ? (
+          <Styleguide tz={tz} />
+        ) : session.role === 'teacher' ? (
+          <TeacherHome session={session} onTimezoneChange={changeTimezone} />
+        ) : (
+          <>
+            {returnedPayment && (
+              <PaymentReturn
+                session={session}
+                paymentId={Number(returnedPayment)}
+                onSettled={() => void reload()}
+              />
+            )}
+            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+              <Calendar
+                anchor={anchor}
+                tz={tz}
+                now={now}
+                slots={visible}
+                loading={loading}
+                actingId={actingId}
+                onAct={act}
+                onWeekShift={(d) => setCursor((c) => addDays(c, d * 7))}
+                onToday={() => setCursor(new Date())}
+              />
+              {balance && (
+                <div className="space-y-4 xl:sticky xl:top-20">
+                  <BalanceCard balance={balance} tz={tz} />
+                  <TopupCard session={session} />
+                  <TimezoneCard session={session} onChange={changeTimezone} />
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </main>
+    </div>
   );
 }

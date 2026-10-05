@@ -1,39 +1,44 @@
-import type { BookResult, CancelResult, SlotView } from './types.js';
+import type {
+  AuditResult, AvailabilityRule, BookResult, CancelResult, GenerateResult,
+  PaymentConnection, PaymentView, SlotView, Student, TeacherSlotView, TopupResult,
+} from './types.js';
 
 /**
  * Єдине місце, де визначається, як запрос повідомляє, хто його робить.
- *
- * Зараз це заголовки, які приймає сервер у не-продакшн оточенні. Коли
- * зʼявиться справжній вхід, тут зміниться лише authHeaders — решта застосунку
- * про спосіб автентифікації не знає.
+ * Решта застосунку про спосіб автентифікації не знає.
  */
-export interface Identity {
-  studentId: number;
-  teacherId: number;
+export interface Session {
+  token: string;
+  role: 'student' | 'teacher';
+  id: number;
+  name: string;
+  /** Зона з профілю, а не з браузера: розклад малюється в часі студента. */
+  timezone: string;
 }
 
-const KEY = 'tutorflow.identity';
+const KEY = 'tutorflow.session';
 
-export function loadIdentity(): Identity | null {
+export function loadSession(): Session | null {
   const raw = localStorage.getItem(KEY);
   if (!raw) return null;
   try {
-    const v = JSON.parse(raw) as Identity;
-    return Number.isInteger(v.studentId) && Number.isInteger(v.teacherId) ? v : null;
+    const v = JSON.parse(raw) as Session;
+    // timezone зʼявився пізніше за token: сесія без нього лишилась від старої
+    // версії застосунку, і її простіше відкинути, ніж добирати зону окремо.
+    return typeof v.token === 'string' && v.token.length > 0 && typeof v.timezone === 'string'
+      ? v
+      : null;
   } catch {
     return null;
   }
 }
 
-export function saveIdentity(id: Identity): void {
-  localStorage.setItem(KEY, JSON.stringify(id));
+export function saveSession(s: Session): void {
+  localStorage.setItem(KEY, JSON.stringify(s));
 }
 
-function authHeaders(id: Identity): Record<string, string> {
-  return {
-    'x-student-id': String(id.studentId),
-    'x-teacher-id': String(id.teacherId),
-  };
+export function clearSession(): void {
+  localStorage.removeItem(KEY);
 }
 
 export class ApiError extends Error {
@@ -46,18 +51,14 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  id: Identity,
-  init: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, token: string | null, init: RequestInit = {}): Promise<T> {
   // content-type ставимо ЛИШЕ коли є тіло: Fastify відхиляє запрос, який
   // оголошує application/json і приходить порожнім
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: {
       ...(init.body ? { 'content-type': 'application/json' } : {}),
-      ...authHeaders(id),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...init.headers,
     },
   });
@@ -77,16 +78,119 @@ async function request<T>(
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+export interface Balance {
+  balanceMinor: number;
+  dueMinor: number;
+  unpaid: { slotId: number; startAt: string; priceMinor: number }[];
+  history: {
+    id: number; amountMinor: number; kind: string;
+    slotId: number | null; comment: string | null; at: string;
+  }[];
+}
+
 export const api = {
-  slots: (id: Identity, from: Date, to: Date) =>
-    request<SlotView[]>(
-      `/slots?from=${from.toISOString()}&to=${to.toISOString()}`,
-      id,
+  login: (email: string, password: string) =>
+    request<Session>('/auth/login', null, {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  /** Зміна власного часового поясу. Доступна обом ролям. */
+  updateTimezone: (t: string, timezone: string) =>
+    request<{ id: number; role: Session['role']; name: string; timezone: string }>(
+      '/me/timezone',
+      t,
+      { method: 'PATCH', body: JSON.stringify({ timezone }) },
     ),
 
-  book: (id: Identity, slotId: number) =>
-    request<BookResult>(`/slots/${slotId}/book`, id, { method: 'POST' }),
+  slots: (t: string, from: Date, to: Date) =>
+    request<SlotView[]>(`/slots?from=${from.toISOString()}&to=${to.toISOString()}`, t),
 
-  cancel: (id: Identity, slotId: number) =>
-    request<CancelResult>(`/slots/${slotId}/cancel`, id, { method: 'POST' }),
+  book: (t: string, slotId: number) =>
+    request<BookResult>(`/slots/${slotId}/book`, t, { method: 'POST' }),
+
+  cancel: (t: string, slotId: number) =>
+    request<CancelResult>(`/slots/${slotId}/cancel`, t, { method: 'POST' }),
+
+  balance: (t: string) => request<Balance>('/balance', t),
+
+  /**
+   * Оплата карткою. Баланс змінює НЕ ця пара маршрутів, а вебхук провайдера:
+   * клієнт лише створює рахунок і потім питає, чим усе скінчилось.
+   */
+  payments: {
+    create: (t: string, amountMinor: number) =>
+      request<PaymentView>('/payments', t, {
+        method: 'POST',
+        body: JSON.stringify({ amountMinor }),
+      }),
+
+    status: (t: string, id: number) => request<PaymentView>(`/payments/${id}`, t),
+
+    /** Чи підключив викладач цього студента приймання оплати. */
+    options: (t: string) => request<{ enabled: boolean }>('/payments/options', t),
+  },
+
+  /** Маршрути кабінету викладача. Усі вимагають токен із роллю teacher. */
+  teacher: {
+    /** Зміна власного часового поясу. Доступна обом ролям. */
+  updateTimezone: (t: string, timezone: string) =>
+    request<{ id: number; role: Session['role']; name: string; timezone: string }>(
+      '/me/timezone',
+      t,
+      { method: 'PATCH', body: JSON.stringify({ timezone }) },
+    ),
+
+  slots: (t: string, from: Date, to: Date) =>
+      request<TeacherSlotView[]>(
+        `/teacher/slots?from=${from.toISOString()}&to=${to.toISOString()}`,
+        t,
+      ),
+
+    students: (t: string) => request<Student[]>('/teacher/students', t),
+
+    topup: (t: string, studentId: number, amountMinor: number, comment?: string) =>
+      request<TopupResult>(`/teacher/students/${studentId}/topup`, t, {
+        method: 'POST',
+        body: JSON.stringify({ amountMinor, comment }),
+      }),
+
+    audit: (t: string, studentId: number) =>
+      request<AuditResult>(`/teacher/students/${studentId}/audit`, t),
+
+    addStudent: (
+      t: string,
+      s: { name: string; email: string; timezone: string; password: string },
+    ) =>
+      request<Student>('/teacher/students', t, { method: 'POST', body: JSON.stringify(s) }),
+
+    availability: (t: string) => request<AvailabilityRule[]>('/teacher/availability', t),
+
+    setAvailability: (
+      t: string,
+      r: { weekday: number; startTime: string; durationMin: number; priceMinor: number },
+    ) =>
+      request<AvailabilityRule>('/teacher/availability', t, {
+        method: 'POST',
+        body: JSON.stringify(r),
+      }),
+
+    paymentConnection: (t: string) =>
+      request<PaymentConnection>('/payments/teacher/connection', t),
+
+    connectPayments: (t: string, token: string) =>
+      request<PaymentConnection>('/payments/teacher/connection', t, {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }),
+
+    disconnectPayments: (t: string) =>
+      request<PaymentConnection>('/payments/teacher/connection', t, { method: 'DELETE' }),
+
+    generate: (t: string, weeks: number) =>
+      request<GenerateResult>('/teacher/slots:generate', t, {
+        method: 'POST',
+        body: JSON.stringify({ weeks }),
+      }),
+  },
 };

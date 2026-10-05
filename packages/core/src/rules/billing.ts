@@ -1,12 +1,10 @@
 /**
  * Чисті правила білінгу.
  *
- * Реалізувати так, щоб позеленіли test/billing.test.ts.
- *
- * Жодних імпортів із @nestjs/*, жодного доступу до БД. Усі суми — `Minor`.
- * Ділення на грошах не застосовується.
+ * Жодних імпортів із @nestjs/*, жодного доступу до БД. Усі суми — `Minor`,
+ * тобто цілі копійки. Ділення на грошах не застосовується.
  */
-import { type Minor } from '../money.js';
+import { minor, type Minor } from '../money.js';
 import type { Transaction } from '../types.js';
 
 /**
@@ -14,40 +12,59 @@ import type { Transaction } from '../types.js';
  * Боргу в моделі немає: не вистачає коштів — слот лишається `pre_booked`.
  */
 export function isAffordable(balance: Minor, price: Minor): boolean {
-  throw new Error('не реалізовано: правила білінгу');
+  return balance >= price;
 }
 
 /**
  * Скільки найближчих `pre_booked` слотів покриває баланс.
  *
- * `prices` подається В ХРОНОЛОГІЧНОМУ ПОРЯДКУ. Функція рахує найдовший
- * ПРЕФІКС, який вкладається в баланс, і зупиняється на першому слоті, на
- * який не вистачило — не «перестрибує» його заради дешевшого наступного.
- * Оплатив чотири заняття — закрились чотири найближчі, саме цього очікує студент.
+ * `prices` подається В ХРОНОЛОГІЧНОМУ ПОРЯДКУ. Рахується найдовший ПРЕФІКС,
+ * який вкладається в баланс: на першому слоті, якого не вистачило, підрахунок
+ * спиняється й дешевший наступний НЕ «перестрибується».
+ *
+ * Оплатив чотири заняття — закрились чотири найближчі, саме цього очікує
+ * студент. Жадібний вибір за ціною здавався б вигіднішим, але давав би
+ * непередбачуваний для людини результат.
  */
 export function slotsCoveredBy(balance: Minor, prices: readonly Minor[]): number {
-  throw new Error('не реалізовано: правила білінгу');
+  let left: number = balance;
+  let covered = 0;
+
+  for (const price of prices) {
+    if (left < price) break;
+    left -= price;
+    covered += 1;
+  }
+
+  return covered;
 }
 
 /** Сума транзакції списання за заняття: відʼємна, на величину ціни. */
 export function chargeAmount(price: Minor): Minor {
-  throw new Error('не реалізовано: правила білінгу');
+  return minor(-price);
 }
 
 /** Сума транзакції повернення: додатна, на величину ціни. */
 export function refundAmount(price: Minor): Minor {
-  throw new Error('не реалізовано: правила білінгу');
+  return minor(price);
 }
 
 /**
  * Баланс як сума всіх транзакцій. Транзакції — джерело істини,
- * `students.balance_minor` лише кеш, і ця функція його перевіряє.
+ * `students.balance_minor` лише кеш, і ця функція дозволяє його перевірити.
  */
-export function balanceFrom(transactions: readonly Pick<Transaction, 'amountMinor'>[]): Minor {
-  throw new Error('не реалізовано: правила білінгу');
+export function balanceFrom(
+  transactions: readonly Pick<Transaction, 'amountMinor'>[],
+): Minor {
+  return minor(transactions.reduce((sum, t) => sum + t.amountMinor, 0));
 }
 
-/** Скільки не вистачає, щоб закрити перелічені неоплачені слоти. Якщо вистачає — 0. */
+/**
+ * Скільки не вистачає, щоб закрити перелічені неоплачені слоти.
+ * Якщо вистачає — нуль, а не відʼємне число: це сума «до сплати», і
+ * відʼємна сума до сплати сенсу не має.
+ */
 export function shortfall(balance: Minor, prices: readonly Minor[]): Minor {
-  throw new Error('не реалізовано: правила білінгу');
+  const total = prices.reduce<number>((sum, p) => sum + p, 0);
+  return minor(Math.max(0, total - balance));
 }

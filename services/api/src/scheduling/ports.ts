@@ -14,6 +14,9 @@ import type { Executor } from './slots.repository.js';
  * окремі бази, — і тут знадобиться outbox із компенсацією.
  */
 export interface ChargePort {
+  /** Поточний баланс студента в копійках. */
+  balanceOf(tx: Executor, studentId: number): Promise<number>;
+
   /** Чи вистачає балансу студента, щоб слот одразу став `booked`. */
   isAffordable(tx: Executor, studentId: number, priceMinor: number): Promise<boolean>;
 
@@ -37,6 +40,7 @@ export class UnavailableChargeAdapter implements ChargePort {
       'білінг ще не підключений: очікується реалізація ChargePort із модуля білінгу',
     );
   }
+  balanceOf(): Promise<number> { this.fail(); }
   isAffordable(): Promise<boolean> { this.fail(); }
   chargeForLesson(): Promise<void> { this.fail(); }
   refundForLesson(): Promise<void> { this.fail(); }

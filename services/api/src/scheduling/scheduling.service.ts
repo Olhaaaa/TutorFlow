@@ -3,12 +3,13 @@ import {
   NotFoundException, ForbiddenException,
 } from '@nestjs/common';
 import {
-  bookRejection, cancelOutcome, holdDeadline, NothingToCancelError,
+  bookRejection, cancelOutcome, holdDeadline, minor, NothingToCancelError,
+  slotsCoveredBy,
 } from '@tutorflow/core';
 import { KYSELY, type Database } from '../db/database.module.js';
 import { AvailabilityRepository } from './availability.repository.js';
 import { CHARGE_PORT, type ChargePort } from './ports.js';
-import { SlotsRepository } from './slots.repository.js';
+import { SlotsRepository, type Executor } from './slots.repository.js';
 import { TeachersRepository } from './teachers.repository.js';
 import { toViewState, type SlotView } from './slot-view.js';
 
@@ -196,6 +197,38 @@ export class SchedulingService {
       const released = await this.slots.releaseEnrollmentSlots(enrollmentId, tx);
       return { id: row.id, slotsReleased: released };
     });
+  }
+
+  /**
+   * Закрити найближчі неоплачені заняття студента коштами, що є на балансі.
+   *
+   * Викликається після поповнення. Слоти беруться в хронологічному порядку, і
+   * підрахунок спиняється на першому, якого не вистачило: оплатив чотири
+   * заняття — закрились чотири найближчі.
+   *
+   * Операція живе тут, бо змінює стан слота. Скільки саме закривати, вирішує
+   * правило з ядра на основі балансу, який віддає порт. У лабораторній 3 цей
+   * виклик перетне межу сервісів і стане подією з outbox.
+   */
+  async applyPayment(tx: Executor, studentId: number, now = new Date()) {
+    const pending = await this.slots.pendingPayment(studentId, tx);
+    if (pending.length === 0) return [] as number[];
+
+    const balance = await this.charge.balanceOf(tx, studentId);
+    const covered = slotsCoveredBy(
+      minor(balance),
+      pending.map((p) => minor(p.price_minor)),
+    );
+
+    const converted: number[] = [];
+    for (const slot of pending.slice(0, covered)) {
+      const moved = await this.slots.convertToBooked(slot.id, now, tx);
+      if (!moved) continue; // хтось випередив — просто пропускаємо
+      await this.charge.chargeForLesson(tx, studentId, slot.id, slot.price_minor);
+      converted.push(slot.id);
+    }
+
+    return converted;
   }
 
   /** Фонові задачі. У лабораторній 1 викликаються вручну, у лабораторній 2 — воркером. */

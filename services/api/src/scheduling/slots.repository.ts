@@ -151,6 +151,25 @@ export class SlotsRepository {
     return result.rows.length;
   }
 
+  /**
+   * АТОМАРНА конвертація закріплення в оплачене заняття.
+   *
+   * Умова `status = 'pre_booked'` усередині UPDATE — захист від подвійного
+   * списання: якщо викладач двічі швидко натисне «поповнити», два обробники
+   * підуть конвертувати ті самі слоти, і другий отримає нуль рядків.
+   */
+  async convertToBooked(slotId: number, paidAt: Date, tx?: Executor) {
+    const row = await this.db(tx)
+      .updateTable('slots')
+      .set({ status: 'booked', paid_at: paidAt, hold_expires_at: null })
+      .where('id', '=', slotId)
+      .where('status', '=', 'pre_booked')
+      .returningAll()
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
   /** Звільнити прострочені закріплення. Фонова задача з лабораторної 2. */
   async expireHolds(now: Date, tx?: Executor) {
     const rows = await this.db(tx)

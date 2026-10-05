@@ -9,3 +9,6 @@ node_modules
 !.env.example
 **/*.log
 compose.dev.yml
+
+# збірка фронтенду — артефакт, у контекст не йде (у рантайм її кладе стадія build-web)
+services/api/static

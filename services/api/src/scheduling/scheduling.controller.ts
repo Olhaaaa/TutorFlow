@@ -52,6 +52,17 @@ export class SchedulingController {
     return this.scheduling.cancel(id, student);
   }
 
+  @Get('teacher/slots')
+  @ApiOperation({
+    summary: 'Розклад викладача на період',
+    description:
+      'На відміну від /slots віддає сирий статус заняття й імʼя студента: '
+      + 'це власний розклад викладача, приховувати в ньому нема чого.',
+  })
+  teacherCalendar(@Query() q: CalendarQueryDto, @CurrentTeacher() teacher: { id: number }) {
+    return this.scheduling.teacherCalendar(teacher.id, new Date(q.from), new Date(q.to));
+  }
+
   @Get('teacher/availability')
   @ApiOperation({ summary: 'Тижневий шаблон доступності' })
   listAvailability(@CurrentTeacher() teacher: { id: number }) {

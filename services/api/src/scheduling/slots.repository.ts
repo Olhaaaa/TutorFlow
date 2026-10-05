@@ -93,6 +93,27 @@ export class SlotsRepository {
    * Календар на період. Повертає слоти викладача, а не лише вільні:
    * чужі заняття потрібні, щоб показати їх як busy без імені студента.
    */
+  /**
+   * Те саме вікно, але з імʼям студента — для кабінету викладача.
+   * left join, а не inner: вільні слоти теж мусять потрапити у відповідь.
+   */
+  async inRangeWithStudents(teacherId: number, from: Date, to: Date, tx?: Executor) {
+    return this.db(tx)
+      .selectFrom('slots')
+      .leftJoin('students', 'students.id', 'slots.student_id')
+      .select([
+        'slots.id as id', 'slots.start_at as start_at', 'slots.end_at as end_at',
+        'slots.price_minor as price_minor', 'slots.status as status',
+        'slots.hold_expires_at as hold_expires_at',
+        'students.id as student_id', 'students.name as student_name',
+      ])
+      .where('slots.teacher_id', '=', teacherId)
+      .where('slots.start_at', '>=', from)
+      .where('slots.start_at', '<', to)
+      .orderBy('slots.start_at')
+      .execute();
+  }
+
   async inRange(teacherId: number, from: Date, to: Date, tx?: Executor) {
     return this.db(tx)
       .selectFrom('slots')

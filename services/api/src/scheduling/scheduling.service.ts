@@ -11,7 +11,7 @@ import { AvailabilityRepository } from './availability.repository.js';
 import { CHARGE_PORT, type ChargePort } from './ports.js';
 import { SlotsRepository, type Executor } from './slots.repository.js';
 import { TeachersRepository } from './teachers.repository.js';
-import { toViewState, type SlotView } from './slot-view.js';
+import { toViewState, type SlotView, type TeacherSlotView } from './slot-view.js';
 
 /** Контекст автентифікованого студента. Заповнює guard автентифікації. */
 export interface StudentContext {
@@ -28,6 +28,20 @@ export class SchedulingService {
     private readonly availability: AvailabilityRepository,
     @Inject(CHARGE_PORT) private readonly charge: ChargePort,
   ) {}
+
+  /** Розклад очима викладача: сирий статус і хто записаний. */
+  async teacherCalendar(teacherId: number, from: Date, to: Date): Promise<TeacherSlotView[]> {
+    const rows = await this.slots.inRangeWithStudents(teacherId, from, to);
+    return rows.map((r) => ({
+      id: r.id,
+      startAt: new Date(r.start_at).toISOString(),
+      endAt: new Date(r.end_at).toISOString(),
+      priceMinor: r.price_minor,
+      status: r.status,
+      student: r.student_id === null ? null : { id: r.student_id, name: r.student_name ?? '—' },
+      payBy: r.hold_expires_at ? new Date(r.hold_expires_at).toISOString() : null,
+    }));
+  }
 
   async calendar(
     teacherId: number,

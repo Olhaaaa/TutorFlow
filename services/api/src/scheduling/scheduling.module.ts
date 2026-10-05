@@ -22,6 +22,6 @@ import { TeachersRepository } from './teachers.repository.js';
     TeachersRepository,
     AvailabilityRepository,
   ],
-  exports: [SchedulingService, SlotsRepository],
+  exports: [SchedulingService, SlotsRepository, TeachersRepository],
 })
 export class SchedulingModule {}

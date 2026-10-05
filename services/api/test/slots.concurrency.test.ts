@@ -24,6 +24,9 @@ let studentIds: number[];
 let slotId: number;
 
 async function reset(): Promise<void> {
+  // payments першими: вони посилаються на журнал, і база не дасть видалити
+  // проводку, на яку є платіж
+  await db.deleteFrom('payments').execute();
   await db.deleteFrom('transactions').execute();
   await db.deleteFrom('slots').execute();
   await db.deleteFrom('enrollments').execute();

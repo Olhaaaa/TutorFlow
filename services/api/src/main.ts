@@ -9,7 +9,11 @@ import { config } from './config.js';
 async function bootstrap(): Promise<void> {
   // FastifyAdapter, не Express: холодний старт нижчий, а при scale-to-zero
   // це властивість, яку бачить користувач.
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
+  // rawBody потрібен вебхуку платежів: провайдер підписує байти тіла, і
+  // перевіряти підпис над повторно серіалізованим JSON не можна.
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), {
+    rawBody: true,
+  });
 
   app.setGlobalPrefix('api', { exclude: ['healthz'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

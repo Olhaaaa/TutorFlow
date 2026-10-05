@@ -4,7 +4,7 @@ import {
 import { balanceFrom, minor, shortfall } from '@tutorflow/core';
 import { KYSELY, type Database } from '../db/database.module.js';
 import { SchedulingService } from '../scheduling/scheduling.service.js';
-import { SlotsRepository } from '../scheduling/slots.repository.js';
+import { SlotsRepository, type Executor } from '../scheduling/slots.repository.js';
 import { StudentsRepository } from './students.repository.js';
 import { TransactionsRepository } from './transactions.repository.js';
 
@@ -84,18 +84,35 @@ export class BillingService {
       throw new NotFoundException('студента не знайдено');
     }
 
-    return this.db.transaction().execute(async (tx) => {
-      await this.transactions.add(
-        { studentId, amountMinor, kind: 'topup', comment: comment ?? null }, tx,
-      );
-      const updated = await this.students.shiftBalance(studentId, amountMinor, tx);
-      const converted = await this.scheduling.applyPayment(tx, studentId);
+    return this.db.transaction().execute(async (tx) => this.credit(tx, studentId, amountMinor, comment));
+  }
 
-      return {
-        balanceMinor: updated?.balance_minor ?? 0,
-        convertedSlots: converted,
-      };
-    });
+  /**
+   * Зарахування коштів усередині ЧУЖОЇ транзакції.
+   *
+   * Винесено з topup заради платежів: там зарахування мусить статись у тій
+   * самій транзакції, що й позначка платежу як проведеного. Якби це були дві
+   * транзакції, повторний вебхук провайдера міг би зарахувати гроші вдруге —
+   * між ними є проміжок, у який платіж уже оплачений, але ще не позначений.
+   */
+  async credit(tx: Executor, studentId: number, amountMinor: number, comment?: string | null) {
+    const transaction = await this.transactions.add(
+      { studentId, amountMinor, kind: 'topup', comment: comment ?? null }, tx,
+    );
+    await this.students.shiftBalance(studentId, amountMinor, tx);
+    const converted = await this.scheduling.applyPayment(tx, studentId);
+
+    // Баланс перечитується ПІСЛЯ конвертації: applyPayment списує кошти за
+    // закриті заняття, тому значення, отримане від shiftBalance, застаріває
+    // в ту ж мить. Віддати його назовні означало б показати користувачу
+    // суму, якої на рахунку вже немає.
+    const after = await this.students.byId(studentId, tx);
+
+    return {
+      transactionId: transaction.id,
+      balanceMinor: after?.balance_minor ?? 0,
+      convertedSlots: converted,
+    };
   }
 
   /**

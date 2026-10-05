@@ -8,6 +8,8 @@ import type { ColumnType, Generated, GeneratedAlways } from 'kysely';
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 export type SlotStatusColumn = 'free' | 'pre_booked' | 'booked' | 'done' | 'cancelled_late';
 export type TransactionKindColumn = 'topup' | 'lesson_charge' | 'refund' | 'adjustment';
+export type PaymentProviderColumn = 'monobank';
+export type PaymentStatusColumn = 'pending' | 'paid' | 'failed' | 'expired';
 
 export interface TeachersTable {
   id: Generated<number>;
@@ -18,6 +20,11 @@ export interface TeachersTable {
   default_price_minor: number;
   cancel_hours: Generated<number>;
   payment_deadline_hours: Generated<number>;
+  /** Еквайринг викладача. Три поля заповнені або всі порожні — так у базі. */
+  payment_provider: PaymentProviderColumn | null;
+  /** AES-256-GCM, формат `v1:iv:tag:ciphertext`. Назовні не віддається ніколи. */
+  payment_token_encrypted: string | null;
+  payments_connected_at: Timestamp | null;
   created_at: Generated<Timestamp>;
 }
 
@@ -77,7 +84,36 @@ export interface TransactionsTable {
   kind: TransactionKindColumn;
   slot_id: number | null;
   comment: string | null;
+  /**
+   * Розгорнуто, а не Generated<Timestamp>: час проводки іноді задається явно
+   * (сідер вносить поповнення заднім числом, щоб журнал читався хронологічно),
+   * а вкладений ColumnType робить колонку недоступною для вставки значення.
+   */
+  created_at: ColumnType<Date, Date | string | undefined, Date | string>;
+}
+
+export interface PaymentsTable {
+  id: Generated<number>;
+  student_id: number;
+  /** Мерчант, який виставив рахунок. Його ключем перевіряється вебхук. */
+  teacher_id: number | null;
+  provider: PaymentProviderColumn;
+  /** invoiceId провайдера. Null, доки рахунок не створено. */
+  provider_payment_id: string | null;
+  amount_minor: number;
+  status: Generated<PaymentStatusColumn>;
+  page_url: string | null;
+  /** Останнє тіло вебхука як є. */
+  raw: ColumnType<unknown, string | null, string | null>;
+  transaction_id: number | null;
   created_at: Generated<Timestamp>;
+  /**
+   * На відміну від created_at цю колонку МИ оновлюємо, тому тип написаний
+   * розгорнуто: при вставці необовʼязкова (є default), при оновленні — Date.
+   * Generated<Timestamp> тут не підходить: вкладений ColumnType робить колонку
+   * недоступною для .set().
+   */
+  updated_at: ColumnType<Date, Date | string | undefined, Date | string>;
 }
 
 export interface DB {
@@ -87,4 +123,5 @@ export interface DB {
   enrollments: EnrollmentsTable;
   slots: SlotsTable;
   transactions: TransactionsTable;
+  payments: PaymentsTable;
 }

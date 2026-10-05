@@ -30,9 +30,5 @@ CLAUDE.md
 .claude/
 /compose.dev.yml.local
 
-# README додається окремо, коли буде готовий текст.
-# Прибрати цей рядок разом із ним:
-/README.md
-
 # артефакти збірки
 *.tsbuildinfo

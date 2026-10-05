@@ -120,3 +120,13 @@ export interface MaintenanceResult {
   lessonsCompleted: number;
   paymentsExpired: number;
 }
+
+/** Постійне місце студента в розкладі. Поля як у таблиці. */
+export interface Enrollment {
+  id: number;
+  weekday: number;
+  /** Локальний настінний час викладача, 'HH:MM:SS'. */
+  start_time: string;
+  student_id: number;
+  student_name: string;
+}

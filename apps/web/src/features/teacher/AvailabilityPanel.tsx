@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { money } from '@/features/calendar/time';
 import { TimezoneCard } from '@/features/profile/TimezoneCard';
+import { EnrollmentsCard } from './EnrollmentsCard';
 
 /** 0 — неділя, як у PostgreSQL extract(dow). Той самий порядок, що в API. */
 const DOW = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'пʼятниця', 'субота'];
@@ -76,6 +77,7 @@ export function AvailabilityPanel({
 
   return (
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Тижневий шаблон</CardTitle>
@@ -113,6 +115,9 @@ export function AvailabilityPanel({
           )}
         </CardContent>
       </Card>
+
+      <EnrollmentsCard session={session} />
+      </div>
 
       <div className="space-y-4">
         <TimezoneCard session={session} onChange={onTimezoneChange} />

@@ -1,7 +1,7 @@
 import type {
   AuditResult, AvailabilityRule, BookResult, CancelResult, GenerateResult,
-  MaintenanceResult, PaymentConnection, PaymentView, SlotView, Student,
-  TeacherSlotView, TopupResult,
+  Enrollment, MaintenanceResult, PaymentConnection, PaymentView, SlotView,
+  Student, TeacherSlotView, TopupResult,
 } from './types.js';
 
 /**
@@ -166,6 +166,22 @@ export const api = {
       request<Student>('/teacher/students', t, { method: 'POST', body: JSON.stringify(s) }),
 
     availability: (t: string) => request<AvailabilityRule[]>('/teacher/availability', t),
+
+    enrollments: (t: string) => request<Enrollment[]>('/teacher/enrollments', t),
+
+    enroll: (
+      t: string,
+      e: { studentId: number; weekday: number; startTime: string },
+    ) =>
+      request<{ id: number; slotsHeld: number }>('/teacher/enrollments', t, {
+        method: 'POST',
+        body: JSON.stringify(e),
+      }),
+
+    unenroll: (t: string, id: number) =>
+      request<{ id: number; slotsReleased: number }>(`/teacher/enrollments/${id}`, t, {
+        method: 'DELETE',
+      }),
 
     setAvailability: (
       t: string,

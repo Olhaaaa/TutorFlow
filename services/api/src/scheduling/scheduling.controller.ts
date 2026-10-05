@@ -93,6 +93,15 @@ export class SchedulingController {
     return this.scheduling.generate(teacher.id, dto.weeks ?? 4);
   }
 
+  @Get('teacher/enrollments')
+  @ApiOperation({
+    summary: 'Постійні місця студентів у розкладі',
+    description: 'Активні закріплення: хто, якого дня тижня й о котрій годині.',
+  })
+  listEnrollments(@CurrentTeacher() teacher: { id: number }) {
+    return this.scheduling.listEnrollments(teacher.id);
+  }
+
   @Post('teacher/enrollments')
   @HttpCode(201)
   @ApiOperation({

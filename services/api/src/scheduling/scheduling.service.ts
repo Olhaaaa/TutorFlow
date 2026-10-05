@@ -166,6 +166,10 @@ export class SchedulingService {
     return this.availability.upsertRule(teacherId, rule);
   }
 
+  listEnrollments(teacherId: number) {
+    return this.availability.listEnrollments(teacherId);
+  }
+
   listAvailability(teacherId: number) {
     return this.availability.listRules(teacherId);
   }

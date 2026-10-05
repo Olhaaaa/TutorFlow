@@ -56,6 +56,28 @@ export class AvailabilityRepository {
       .executeTakeFirstOrThrow();
   }
 
+  /**
+   * Активні закріплення викладача разом з іменами студентів.
+   * Фільтр по викладачу йде через студента: enrollments належать студенту,
+   * а студент — викладачу.
+   */
+  async listEnrollments(teacherId: number, tx?: Executor) {
+    return this.db(tx)
+      .selectFrom('enrollments')
+      .innerJoin('students', 'students.id', 'enrollments.student_id')
+      .select([
+        'enrollments.id as id',
+        'enrollments.weekday as weekday',
+        'enrollments.start_time as start_time',
+        'students.id as student_id',
+        'students.name as student_name',
+      ])
+      .where('students.teacher_id', '=', teacherId)
+      .where('enrollments.is_active', '=', true)
+      .orderBy(['enrollments.weekday', 'enrollments.start_time'])
+      .execute();
+  }
+
   async deactivateEnrollment(enrollmentId: number, teacherId: number, tx?: Executor) {
     const row = await sql<{ id: number }>`
       update enrollments e

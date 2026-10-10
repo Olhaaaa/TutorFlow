@@ -63,9 +63,19 @@ export class SlotsRepository {
     to: 'free' | 'cancelled_late' | 'done',
     tx?: Executor,
   ) {
+    // Звільнений слот не повинен тягнути за собою посилання на закріплення:
+    // інакше наступний студент, який його візьме, опиниться привʼязаним до
+    // чужого постійного місця, і зняття того закріплення звільнило б його
+    // заняття.
     const patch =
       to === 'free'
-        ? { status: 'free' as const, student_id: null, hold_expires_at: null, paid_at: null }
+        ? {
+            status: 'free' as const,
+            student_id: null,
+            enrollment_id: null,
+            hold_expires_at: null,
+            paid_at: null,
+          }
         : { status: to, hold_expires_at: null };
 
     const row = await this.db(tx)

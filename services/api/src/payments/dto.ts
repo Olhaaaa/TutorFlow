@@ -5,9 +5,12 @@ import { Type } from 'class-transformer';
 export class CreatePaymentDto {
   @ApiProperty({
     example: 100000,
-    description: 'сума в КОПІЙКАХ, цілим додатним числом (monobank приймає так само)',
+    minimum: 100,
+    description:
+      'сума в КОПІЙКАХ, цілим додатним числом (monobank приймає так само); '
+      + 'мінімум — 100, тобто 1 ₴',
   })
-  @Type(() => Number) @IsInt() @Min(10_000)
+  @Type(() => Number) @IsInt() @Min(100)
   amountMinor!: number;
 }
 

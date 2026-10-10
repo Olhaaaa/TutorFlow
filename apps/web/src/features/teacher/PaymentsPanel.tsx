@@ -28,6 +28,65 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { dateTimeLabel } from '@/features/calendar/time';
 
 /**
+ * Куди провайдер віддасть результат оплати.
+ *
+ * Це стан РОЗГОРТАННЯ, а не рахунку, але показується він тут: інакше про
+ * проблему першим дізнається студент — у вигляді помилки при спробі
+ * заплатити. Три випадки розрізняються навмисно, бо лікуються по-різному.
+ */
+function Delivery({ state }: { state: PaymentConnection }) {
+  if (!state.publicBaseUrl) {
+    return (
+      <Alert>
+        <TriangleAlert aria-hidden />
+        <AlertTitle>Не задано адресу застосунку</AlertTitle>
+        <AlertDescription>
+          <p>
+            Рахунок створиться й оплатити його можна, але зі сторінки банку студента нікуди не
+            повернуть, і кошти зарахуються лише коли він сам відкриє застосунок.
+          </p>
+          <p>
+            Задайте <code className="font-mono">PUBLIC_BASE_URL</code> у{' '}
+            <code className="font-mono">.env</code> — у розробці це{' '}
+            <code className="font-mono">http://localhost:5173</code>, у хмарі адреса розгортання.
+          </p>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (!state.webhookUrl) {
+    return (
+      <Alert>
+        <CircleAlert aria-hidden />
+        <AlertTitle>Вебхук не надсилається</AlertTitle>
+        <AlertDescription>
+          <p>
+            Адреса <code className="font-mono">{state.publicBaseUrl}</code> не видна з інтернету,
+            тому просити провайдера про вебхук немає сенсу — він до неї не дійде.
+          </p>
+          <p>
+            Оплата при цьому працює: статус рахунку добирається опитуванням, коли студент
+            повертається зі сторінки банку. Для справжньої доставки потрібен тунель або хмарна
+            адреса на https.
+          </p>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <Alert>
+      <CircleCheck aria-hidden />
+      <AlertTitle>Результат приходить вебхуком</AlertTitle>
+      <AlertDescription>
+        <code className="font-mono break-all">{state.webhookUrl}</code>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/**
  * Підключення власного рахунку викладача.
  *
  * Токен сюди ніколи не повертається — ні при завантаженні, ні після
@@ -124,6 +183,8 @@ export function PaymentsPanel({ session }: { session: Session }) {
               </AlertDescription>
             </Alert>
           )}
+
+          <Delivery state={state} />
 
           {state.connected ? (
             <div className="space-y-3">

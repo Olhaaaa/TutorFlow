@@ -87,8 +87,10 @@ export class MonobankClient {
     amountMinor: number;
     reference: string;
     destination: string;
-    webHookUrl: string;
-    redirectUrl: string;
+    /** Куди провайдер надішле результат. Null — не просимо вебхука взагалі. */
+    webHookUrl?: string | null;
+    /** Куди повернути користувача з платіжної сторінки. */
+    redirectUrl?: string | null;
     validitySec?: number;
   }): Promise<MonoInvoice> {
     return this.call<MonoInvoice>(params.token, '/api/merchant/invoice/create', {
@@ -100,8 +102,10 @@ export class MonobankClient {
           reference: params.reference,
           destination: params.destination,
         },
-        webHookUrl: params.webHookUrl,
-        redirectUrl: params.redirectUrl,
+        // Поля, яких немає, саме ВИПУСКАЮТЬСЯ, а не йдуть як null: провайдер
+        // розрізняє «вебхук не потрібен» і «ось вам null замість адреси».
+        ...(params.webHookUrl ? { webHookUrl: params.webHookUrl } : {}),
+        ...(params.redirectUrl ? { redirectUrl: params.redirectUrl } : {}),
         validity: params.validitySec ?? 3600,
         paymentType: 'debit',
       }),

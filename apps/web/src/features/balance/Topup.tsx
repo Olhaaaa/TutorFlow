@@ -11,6 +11,12 @@ import { Input } from '@/components/ui/input';
 const PRESETS = [500, 1000, 2000];
 
 /**
+ * Нижня межа в гривнях. Авторитетна перевірка — на сервері
+ * (`MIN_AMOUNT_MINOR`), ця лише економить завідомо марний запрос.
+ */
+const MIN_HRYVNIA = 1;
+
+/**
  * Оплата карткою.
  *
  * Кнопка лише створює рахунок і відправляє користувача на сторінку провайдера.
@@ -36,8 +42,8 @@ export function TopupCard({ session }: { session: Session }) {
   }, [session.token]);
 
   const pay = async (hryvnia: number) => {
-    if (!Number.isFinite(hryvnia) || hryvnia < 100) {
-      toast.error('мінімальна сума — 100 ₴');
+    if (!Number.isFinite(hryvnia) || hryvnia < MIN_HRYVNIA) {
+      toast.error(`мінімальна сума — ${MIN_HRYVNIA} ₴`);
       return;
     }
     setBusy(true);
@@ -46,7 +52,9 @@ export function TopupCard({ session }: { session: Session }) {
       if (!payment.pageUrl) throw new Error('провайдер не повернув сторінку оплати');
       window.location.assign(payment.pageUrl);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 503) {
+      // 503 — не налаштований сервер, 409 — викладач не підключив рахунок.
+      // Для студента різниця не має значення, дія однакова.
+      if (e instanceof ApiError && (e.status === 503 || e.status === 409)) {
         toast.error('Оплата карткою ще не налаштована', {
           description: 'Поки що баланс поповнює викладач вручну',
         });

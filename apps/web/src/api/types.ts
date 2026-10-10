@@ -123,6 +123,10 @@ export interface PaymentConnection {
   fallbackAvailable: boolean;
   /** Чи налаштоване шифрування на сервері. */
   canConnect: boolean;
+  /** Зовнішня адреса застосунку з оточення сервера (PUBLIC_BASE_URL). */
+  publicBaseUrl: string | null;
+  /** Куди провайдер надсилатиме результат. Null — адреса не публічна. */
+  webhookUrl: string | null;
 }
 
 /** Що змінив прохід переходів станів за часом. */

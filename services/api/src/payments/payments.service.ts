@@ -15,6 +15,7 @@ import { MonobankClient, type MonoInvoiceStatus, type MonoWebhook } from './mono
 import { PaymentsRepository } from './payments.repository.js';
 import { TokenCipher } from './token-cipher.js';
 import { TeachersRepository } from '../scheduling/teachers.repository.js';
+import { returnUrl, webhookUrl } from './urls.js';
 
 /** Провайдер говорить про рахунок, ми — про гроші. Переклад одним місцем. */
 const STATUS: Record<MonoInvoiceStatus, PaymentStatusColumn> = {
@@ -27,8 +28,21 @@ const STATUS: Record<MonoInvoiceStatus, PaymentStatusColumn> = {
   expired: 'expired',
 };
 
-/** Нижня межа поповнення: платити 1 копійку безглуздо, а комісію провайдер візьме. */
-const MIN_AMOUNT_MINOR = 10_000;
+/**
+ * Нижня межа поповнення — 1 ₴.
+ *
+ * Знижена до мінімуму провайдера свідомо: на тестовому токені рахунок на
+ * 100 ₴ незручно проганяти десятки разів, а межа тут захищає не від малих
+ * сум, а від безглуздих — рахунок на одну копійку провайдер однаково не
+ * прийме, зате комісію за звернення візьме.
+ *
+ * Для бойового розгортання її варто підняти до розумної частки ціни заняття:
+ * кожен платіж коштує грошей незалежно від суми.
+ */
+const MIN_AMOUNT_MINOR = 100;
+
+/** Рядок платежу як його віддає сховище. Другого опису тих самих полів не треба. */
+type PaymentRow = NonNullable<Awaited<ReturnType<PaymentsRepository['byId']>>>;
 
 @Injectable()
 export class PaymentsService {
@@ -61,6 +75,14 @@ export class PaymentsService {
       fallbackAvailable: this.mono.fallbackToken !== null,
       /** Чи взагалі можна підключати: без ключа шифрування — ні. */
       canConnect: this.cipher.available,
+      /**
+       * Зовнішня адреса застосунку й доля вебхука при ній. Це стан
+       * РОЗГОРТАННЯ, а не рахунку, але бачити його мусить той, хто
+       * налаштовує оплату: інакше про проблему дізнається студент — у
+       * вигляді помилки при спробі заплатити.
+       */
+      publicBaseUrl: config.publicBaseUrl,
+      webhookUrl: webhookUrl(config.publicBaseUrl),
     };
   }
 
@@ -126,11 +148,6 @@ export class PaymentsService {
         `мінімальна сума поповнення — ${MIN_AMOUNT_MINOR / 100} ₴`,
       );
     }
-    if (!config.publicBaseUrl) {
-      throw new BadRequestException(
-        'не задано PUBLIC_BASE_URL — провайдеру нема куди надсилати вебхук',
-      );
-    }
 
     const payment = await this.payments.create({
       studentId,
@@ -139,13 +156,16 @@ export class PaymentsService {
       amountMinor,
     });
 
+    // Відсутність публічної адреси не є приводом відмовити в оплаті: без
+    // вебхука платіж усе одно проходить, а статус добирається опитуванням —
+    // див. reconcile. Саме це робить оплату перевірюваною на локальній машині.
     const invoice = await this.mono.createInvoice({
       token,
       amountMinor,
       reference: String(payment.id),
       destination: 'Поповнення балансу Tutorflow',
-      webHookUrl: `${config.publicBaseUrl}/api/payments/monobank/callback`,
-      redirectUrl: `${config.publicBaseUrl}/#payment-${payment.id}`,
+      webHookUrl: webhookUrl(config.publicBaseUrl),
+      redirectUrl: returnUrl(config.publicBaseUrl, payment.id),
     });
 
     const saved = await this.payments.attachInvoice(payment.id, invoice.invoiceId, invoice.pageUrl);
@@ -153,13 +173,124 @@ export class PaymentsService {
     return { id: saved.id, amountMinor, pageUrl: invoice.pageUrl, status: saved.status };
   }
 
-  /** Статус для сторінки повернення. Чужі платежі не показуємо. */
+  /**
+   * Статус для сторінки повернення. Чужі платежі не показуємо.
+   *
+   * Поки платіж висить `pending`, статус добирається у провайдера. Сторінка
+   * повернення опитує цей маршрут кожні дві секунди, тому окремого «оновити»
+   * користувачу не потрібно.
+   */
   async byId(studentId: number, paymentId: number) {
     const p = await this.payments.byId(paymentId);
     if (!p) throw new NotFoundException('платіж не знайдено');
     if (p.student_id !== studentId) throw new ForbiddenException('це не ваш платіж');
 
-    return { id: p.id, amountMinor: p.amount_minor, status: p.status, pageUrl: p.page_url };
+    const fresh = p.status === 'pending' && p.provider_payment_id ? await this.reconcile(p) : p;
+
+    return {
+      id: fresh.id,
+      amountMinor: fresh.amount_minor,
+      status: fresh.status,
+      pageUrl: fresh.page_url,
+    };
+  }
+
+  /**
+   * Добір статусу в провайдера для платежу, що висить `pending`.
+   *
+   * Вебхук губиться регулярно й з різних причин: локальна машина без
+   * публічної адреси, тунель відвалився, процес саме перезапускався,
+   * провайдер не дочекався 2xx. Гроші з картки при цьому вже списані, тому
+   * єдине правильне — спитати провайдера самим.
+   *
+   * Зарахування йде ТИМ САМИМ шляхом, що й у вебхука, тому одночасні добір і
+   * доставка не подвоять коштів: виграє той, хто перший зробить
+   * `UPDATE … WHERE status <> 'paid'`.
+   *
+   * Помилка провайдера назовні не піднімається: статус із нашої бази — усе
+   * одно коректна відповідь, а падіння зробило б сторінку повернення
+   * непрацездатною через чужу недоступність.
+   */
+  private async reconcile(payment: PaymentRow): Promise<PaymentRow> {
+    const invoiceId = payment.provider_payment_id;
+    if (!invoiceId) return payment;
+
+    try {
+      const token = await this.tokenFor(payment.teacher_id ?? 0);
+      const invoice = await this.mono.status(token, invoiceId);
+      const mapped = STATUS[invoice.status];
+
+      // проміжний стан — рахунок ще в роботі, нічого не змінюємо
+      if (!mapped || mapped === 'pending') return payment;
+
+      if (mapped === 'paid') {
+        await this.creditInvoice(payment, invoiceId, invoice);
+      } else {
+        await this.payments.markStatus({
+          provider: 'monobank',
+          providerPaymentId: invoiceId,
+          status: mapped,
+          raw: invoice,
+        });
+      }
+
+      return (await this.payments.byId(payment.id)) ?? payment;
+    } catch (e) {
+      console.warn(
+        `платіж ${payment.id}: добір статусу не вдався — ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return payment;
+    }
+  }
+
+  /**
+   * Зарахувати оплачений рахунок. Спільне для вебхука й для добору статусу:
+   * обидва шляхи мусять зараховувати кошти однаково й рівно раз, тому логіка
+   * одна, а не дві схожі.
+   */
+  private async creditInvoice(
+    payment: Pick<PaymentRow, 'student_id' | 'amount_minor'>,
+    invoiceId: string,
+    raw: unknown,
+  ) {
+    return this.db
+      .transaction()
+      .execute(async (tx) => {
+        const credited = await this.billing.credit(
+          tx,
+          payment.student_id,
+          payment.amount_minor,
+          `оплата monobank ${invoiceId}`,
+        );
+
+        const claimed = await this.payments.markPaid(
+          {
+            provider: 'monobank',
+            providerPaymentId: invoiceId,
+            transactionId: credited.transactionId,
+            raw,
+          },
+          tx,
+        );
+
+        // Рядок уже був оплачений — цей виклик повторний. Відкочуємо
+        // транзакцію цілком, тому проводка, створена кілька рядків вище, теж
+        // зникає.
+        if (!claimed) throw new AlreadyCredited();
+
+        return {
+          credited: true as const,
+          status: 'paid' as const,
+          balanceMinor: credited.balanceMinor,
+          convertedSlots: credited.convertedSlots,
+        };
+      })
+      .catch((e: unknown) => {
+        if (e instanceof AlreadyCredited) {
+          return { credited: false as const, status: 'paid' as const, reason: 'повторна доставка' };
+        }
+        throw e;
+      });
   }
 
   /**
@@ -214,40 +345,7 @@ export class PaymentsService {
       );
     }
 
-    return this.db.transaction().execute(async (tx) => {
-      const credited = await this.billing.credit(
-        tx,
-        payment.student_id,
-        payment.amount_minor,
-        `оплата monobank ${body.invoiceId}`,
-      );
-
-      const claimed = await this.payments.markPaid(
-        {
-          provider: 'monobank',
-          providerPaymentId: body.invoiceId,
-          transactionId: credited.transactionId,
-          raw: body,
-        },
-        tx,
-      );
-
-      // Рядок уже був оплачений — цей вебхук повторний. Відкочуємо транзакцію
-      // цілком, тому проводка, створена кілька рядків вище, теж зникає.
-      if (!claimed) throw new AlreadyCredited();
-
-      return {
-        credited: true,
-        status: 'paid' as const,
-        balanceMinor: credited.balanceMinor,
-        convertedSlots: credited.convertedSlots,
-      };
-    }).catch((e: unknown) => {
-      if (e instanceof AlreadyCredited) {
-        return { credited: false, status: 'paid' as const, reason: 'повторна доставка' };
-      }
-      throw e;
-    });
+    return this.creditInvoice(payment, body.invoiceId, body);
   }
 }
 

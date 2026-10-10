@@ -5,15 +5,22 @@ import { api, type Session } from '@/api/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { zoneOffset } from '@/features/calendar/time';
 
 /**
  * Перелік зон береться у браузера, а не зашивається в код: база IANA
  * оновлюється разом із правилами переходу на літній час, і власний список
- * застарів би мовчки. Старі браузери без цього API просто отримають поле без
- * підказок — ввести назву руками все одно можна.
+ * застарів би мовчки.
  */
 function allZones(): string[] {
   try {
@@ -47,6 +54,68 @@ function behavesSame(a: string, b: string, year: number): boolean {
   }
 }
 
+/**
+ * Назви регіонів українською. Самі зони лишаються в канонічному вигляді
+ * `Europe/Kyiv` — це технічний ідентифікатор, який іде на сервер, і
+ * перекладати його означало б завести другий словник назв зон.
+ */
+const REGIONS: Record<string, string> = {
+  Europe: 'Європа',
+  America: 'Америка',
+  Asia: 'Азія',
+  Africa: 'Африка',
+  Australia: 'Австралія',
+  Atlantic: 'Атлантика',
+  Indian: 'Індійський океан',
+  Pacific: 'Тихий океан',
+  Antarctica: 'Антарктида',
+  Arctic: 'Арктика',
+  Etc: 'Зсуви від UTC',
+};
+
+interface ZoneGroup {
+  region: string;
+  label: string;
+  zones: { value: string; city: string }[];
+}
+
+/**
+ * Зони, згруповані за регіоном. Без груп список на чотири сотні рядків
+ * нечитабельний, а з ними в ньому видно структуру: спершу Європа, бо тут
+ * живе більшість користувачів, далі решта за алфавітом.
+ *
+ * Поточна зона додається, навіть якщо браузер її не перелічив: інакше,
+ * відкривши список, користувач не побачив би в ньому того, що в нього зараз.
+ */
+function groupZones(zones: readonly string[], current: string): ZoneGroup[] {
+  const byRegion = new Map<string, { value: string; city: string }[]>();
+
+  for (const value of zones.includes(current) ? zones : [current, ...zones]) {
+    const slash = value.indexOf('/');
+    const region = slash < 0 ? 'Etc' : value.slice(0, slash);
+    // «America/Argentina/Buenos_Aires» → «Argentina · Buenos Aires»
+    const city = (slash < 0 ? value : value.slice(slash + 1))
+      .replaceAll('_', ' ')
+      .replaceAll('/', ' · ');
+
+    const list = byRegion.get(region);
+    if (list) list.push({ value, city });
+    else byRegion.set(region, [{ value, city }]);
+  }
+
+  return [...byRegion]
+    .map(([region, list]) => ({
+      region,
+      label: REGIONS[region] ?? region,
+      zones: list.sort((a, b) => a.city.localeCompare(b.city, 'uk')),
+    }))
+    .sort((a, b) => {
+      if (a.region === 'Europe') return -1;
+      if (b.region === 'Europe') return 1;
+      return a.label.localeCompare(b.label, 'uk');
+    });
+}
+
 export function TimezoneCard({
   session,
   onChange,
@@ -54,29 +123,26 @@ export function TimezoneCard({
   session: Session;
   onChange: (timezone: string) => void;
 }) {
-  const zones = useMemo(() => allZones(), []);
+  const groups = useMemo(() => groupZones(allZones(), session.timezone), [session.timezone]);
   const browserZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   // Ліниве обчислення: рік потрібен лише раз, а виклик Date просто в рендері
   // зробив би компонент нечистим.
   const [year] = useState(() => new Date().getUTCFullYear());
-  const [value, setValue] = useState(session.timezone);
   const [busy, setBusy] = useState(false);
 
-  const changed = value.trim() !== '' && value !== session.timezone;
   const teacher = session.role === 'teacher';
 
   const save = async (tz: string) => {
+    if (tz === session.timezone) return;
     setBusy(true);
     try {
       const updated = await api.updateTimezone(session.token, tz);
       onChange(updated.timezone);
-      setValue(updated.timezone);
       toast.success(`Часовий пояс: ${updated.timezone}`, {
         description: 'Розклад перемальовано у новому часі',
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
-      setValue(session.timezone);
     } finally {
       setBusy(false);
     }
@@ -97,25 +163,50 @@ export function TimezoneCard({
 
       <CardContent className="space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor="tz-input">Нова зона</Label>
-          <div className="flex gap-1">
-            <Input
-              id="tz-input"
-              list="tz-options"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Europe/Kyiv"
-              className="h-8 font-mono"
-            />
-            <Button size="sm" disabled={busy || !changed} onClick={() => save(value.trim())}>
-              {busy ? <Loader2 className="animate-spin" aria-hidden /> : 'Зберегти'}
-            </Button>
-          </div>
-          <datalist id="tz-options">
-            {zones.map((z) => (
-              <option key={z} value={z} />
-            ))}
-          </datalist>
+          <Label htmlFor="tz-select">Нова зона</Label>
+          {/*
+            Вибір застосовується одразу, без окремої кнопки «Зберегти»: у
+            випадному списку сам клік по пункту вже є підтвердженням, а зміна
+            зони нічого не руйнує — заняття не рухаються, змінюється лише час,
+            у якому вони показані.
+          */}
+          <Select value={session.timezone} disabled={busy} onValueChange={(z) => void save(z)}>
+            <SelectTrigger id="tz-select" size="sm" className="w-full font-mono">
+              {/*
+                У тригері стоїть повна назва зони, а не підпис вибраного
+                пункту: «Kyiv» без регіону ні про що не каже, а саме цей рядок
+                іде на сервер. Явні children ще й гасять підстановку тексту
+                пункту, яку Radix робить за замовчуванням.
+              */}
+              <SelectValue>
+                {busy ? <Loader2 className="animate-spin" aria-hidden /> : null}
+                {session.timezone}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              {groups.map((g) => (
+                <SelectGroup key={g.region}>
+                  <SelectLabel>{g.label}</SelectLabel>
+                  {g.zones.map((z) => (
+                    <SelectItem key={z.value} value={z.value}>
+                      <span className="flex w-full items-baseline justify-between gap-3">
+                        <span>{z.city}</span>
+                        {/*
+                          Зсув рахується тут, а не наперед для всього списку:
+                          Intl.DateTimeFormat на кожну з чотирьох сотень зон —
+                          помітна пауза, а Radix малює пункти лише коли список
+                          уже відкрито.
+                        */}
+                        <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                          {zoneOffset(z.value)}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {!behavesSame(browserZone, session.timezone, year) && (
@@ -124,7 +215,7 @@ export function TimezoneCard({
             size="sm"
             className="w-full"
             disabled={busy}
-            onClick={() => save(browserZone)}
+            onClick={() => void save(browserZone)}
           >
             Взяти з браузера: {browserZone}
           </Button>

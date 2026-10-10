@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { GraduationCap, LogOut, Palette } from 'lucide-react';
+import { GraduationCap, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ApiError,
@@ -45,6 +45,9 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [actingId, setActingId] = useState<number | null>(null);
   const hash = useHash();
+  // Сторінка станів — службова: специфікація інтерфейсу й скріншот для звіту.
+  // Посилання на неї в інтерфейсі немає ні в кого, вона відкривається рівно за
+  // адресою #styleguide.
   const styleguide = hash === '#styleguide';
   // Провайдер повертає користувача на #payment-<id>: за ним екран розуміє,
   // статус якого платежу опитувати.
@@ -163,11 +166,6 @@ export function App() {
             <Badge variant="secondary">
               {session.role === 'student' ? 'студент' : 'викладач'}
             </Badge>
-            <Button variant="ghost" size="icon-sm" asChild title="Стани слота">
-              <a href="#styleguide" aria-label="Стани слота">
-                <Palette aria-hidden />
-              </a>
-            </Button>
             <Button variant="outline" size="sm" onClick={signOut}>
               <LogOut aria-hidden />
               <span className="hidden sm:inline">вийти</span>

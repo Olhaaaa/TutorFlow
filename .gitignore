@@ -25,7 +25,10 @@ services/api/static/
 .DS_Store
 
 # чернетки й службові файли — у коміти не йдуть
-/docs/
+/docs/*
+# ADR-и — виняток: рішення мусять лежати поряд із кодом, який вони описують,
+# і бути видні в історії разом із ним
+!/docs/adr/
 CLAUDE.md
 .claude/
 /compose.dev.yml.local

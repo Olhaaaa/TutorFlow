@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   bookRejection, holdDeadline, isHoldExpired,
-  cancelOutcome, isCancellationFree, isCompleted,
+  cancelOutcome, isCancellationFree, isCompleted, teacherCancelOutcome,
 } from '../src/rules/scheduling.js';
 
 const NOW = new Date('2026-10-14T12:00:00Z');
@@ -90,5 +90,39 @@ describe('правило 8 — завершення', () => {
     expect(isCompleted({ status: 'pre_booked', endAt: h(-1) }, NOW)).toBe(false);
     expect(isCompleted({ status: 'free', endAt: h(-1) }, NOW)).toBe(false);
     expect(isCompleted({ status: 'done', endAt: h(-1) }, NOW)).toBe(false);
+  });
+});
+
+describe('скасування викладачем', () => {
+  it('оплачене заняття: година звільняється, кошти повертаються', () => {
+    expect(teacherCancelOutcome({ status: 'booked', startAt: h(48) }, NOW))
+      .toEqual({ status: 'free', refund: true });
+  });
+
+  it('правило cancelHours на викладача не діє: за годину до початку те саме', () => {
+    expect(teacherCancelOutcome({ status: 'booked', startAt: h(1) }, NOW))
+      .toEqual({ status: 'free', refund: true });
+  });
+
+  it('неоплачене закріплення звільняється, але повертати нічого', () => {
+    expect(teacherCancelOutcome({ status: 'pre_booked', startAt: h(1) }, NOW))
+      .toEqual({ status: 'free', refund: false });
+  });
+
+  it('cancelled_late у викладача не виникає ніколи', () => {
+    for (const at of [h(0.5), h(1), h(24), h(100)]) {
+      expect(teacherCancelOutcome({ status: 'booked', startAt: at }, NOW).status).toBe('free');
+    }
+  });
+
+  it('вільний або вже закритий слот скасувати не можна', () => {
+    expect(() => teacherCancelOutcome({ status: 'free', startAt: h(24) }, NOW)).toThrow();
+    expect(() => teacherCancelOutcome({ status: 'done', startAt: h(-24) }, NOW)).toThrow();
+    expect(() => teacherCancelOutcome({ status: 'cancelled_late', startAt: h(-1) }, NOW)).toThrow();
+  });
+
+  it('заняття, яке вже почалось, скасувати не можна', () => {
+    expect(() => teacherCancelOutcome({ status: 'booked', startAt: h(-0.5) }, NOW)).toThrow();
+    expect(() => teacherCancelOutcome({ status: 'booked', startAt: NOW }, NOW)).toThrow();
   });
 });

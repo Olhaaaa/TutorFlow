@@ -1,7 +1,7 @@
 import type {
   AuditResult, AvailabilityRule, BookResult, CancelResult, GenerateResult,
   Enrollment, MaintenanceResult, PaymentConnection, PaymentView, SlotView,
-  Student, TeacherSlotView, TopupResult,
+  Student, TeacherCancelResult, TeacherSlotView, TopupResult,
 } from './types.js';
 
 /**
@@ -134,19 +134,18 @@ export const api = {
 
   /** Маршрути кабінету викладача. Усі вимагають токен із роллю teacher. */
   teacher: {
-    /** Зміна власного часового поясу. Доступна обом ролям. */
-  updateTimezone: (t: string, timezone: string) =>
-    request<{ id: number; role: Session['role']; name: string; timezone: string }>(
-      '/me/timezone',
-      t,
-      { method: 'PATCH', body: JSON.stringify({ timezone }) },
-    ),
-
-  slots: (t: string, from: Date, to: Date) =>
+    slots: (t: string, from: Date, to: Date) =>
       request<TeacherSlotView[]>(
         `/teacher/slots?from=${from.toISOString()}&to=${to.toISOString()}`,
         t,
       ),
+
+    /**
+     * Скасувати заняття. Правило інше, ніж у студента, тому й маршрут інший:
+     * година звільняється завжди, а оплачене заняття завжди повертає кошти.
+     */
+    cancel: (t: string, slotId: number) =>
+      request<TeacherCancelResult>(`/teacher/slots/${slotId}/cancel`, t, { method: 'POST' }),
 
     students: (t: string) => request<Student[]>('/teacher/students', t),
 

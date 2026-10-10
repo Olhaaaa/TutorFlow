@@ -86,3 +86,46 @@ export function isCancellationFree(
 export function isCompleted(slot: Pick<Slot, 'status' | 'endAt'>, now: Date): boolean {
   return slot.status === 'booked' && slot.endAt.getTime() <= now.getTime();
 }
+
+export class LessonAlreadyStartedError extends Error {
+  constructor(readonly startAt: Date) {
+    super(`заняття вже почалось (${startAt.toISOString()}) — скасовувати нічого`);
+    this.name = 'LessonAlreadyStartedError';
+  }
+}
+
+/** Що робить скасування викладачем: слот звільняється, кошти іноді повертаються. */
+export interface TeacherCancelOutcome {
+  status: Extract<SlotStatus, 'free'>;
+  /** Чи є що повертати: гроші списані лише в `booked`. */
+  refund: boolean;
+}
+
+/**
+ * Скасування ВИКЛАДАЧЕМ. Відрізняється від студентського двома речами.
+ *
+ * Перша: правило `cancelHours` не застосовується. Воно захищає час викладача
+ * від студента, який передумав за годину до заняття; застосувати його до того,
+ * хто сам скасував, означало б оштрафувати потерпілого. Тому результат завжди
+ * `free`, а `cancelled_late` тут не виникає ніколи.
+ *
+ * Друга: повернення коштів залежить не від строку, а лише від того, чи були
+ * вони списані. `pre_booked` — місце трималось, але не оплачене, і «повернення»
+ * за нього створило б із повітря суму, якої студент не платив.
+ *
+ * Заняття, яке вже почалось, скасувати не можна: воно або відбулось, або
+ * закриється як проведене фоновим проходом. Скасовувати минуле — це вже не
+ * розклад, а виправлення журналу, і робиться воно `adjustment`-проводкою.
+ */
+export function teacherCancelOutcome(
+  slot: Pick<Slot, 'status' | 'startAt'>,
+  now: Date,
+): TeacherCancelOutcome {
+  if (slot.status !== 'booked' && slot.status !== 'pre_booked') {
+    throw new NothingToCancelError(slot.status);
+  }
+  if (slot.startAt.getTime() <= now.getTime()) {
+    throw new LessonAlreadyStartedError(slot.startAt);
+  }
+  return { status: 'free', refund: slot.status === 'booked' };
+}

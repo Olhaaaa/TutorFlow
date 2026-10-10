@@ -47,6 +47,17 @@ export interface TeacherSlotView {
   payBy: string | null;
 }
 
+/** Віддає POST /api/teacher/slots/:id/cancel. */
+export interface TeacherCancelResult {
+  id: number;
+  /** У викладача результат завжди один: cancelled_late тут не виникає. */
+  status: 'free';
+  studentId: number;
+  refunded: boolean;
+  /** Скільки саме повернулось на баланс студента. Нуль, якщо не було оплати. */
+  refundedMinor: number;
+}
+
 /**
  * Поля у snake_case навмисно: ці ендпоінти віддають рядки таблиць як є.
  * Перейменовувати їх на клієнті — означало б завести другий словник назв,

@@ -3,8 +3,9 @@ import {
   NotFoundException, ForbiddenException,
 } from '@nestjs/common';
 import {
-  bookRejection, cancelOutcome, holdDeadline, minor, NothingToCancelError,
-  slotsCoveredBy,
+  bookRejection, cancelOutcome, holdDeadline, LessonAlreadyStartedError, minor,
+  NothingToCancelError, slotsCoveredBy, teacherCancelOutcome,
+  type TeacherCancelOutcome,
 } from '@tutorflow/core';
 import { KYSELY, type Database } from '../db/database.module.js';
 import { AvailabilityRepository } from './availability.repository.js';
@@ -156,6 +157,63 @@ export class SchedulingService {
       }
 
       return { id: moved.id, status: moved.status, refunded: outcome === 'free' && wasPaid };
+    });
+  }
+
+  /**
+   * Скасування ВИКЛАДАЧЕМ.
+   *
+   * Окремий метод, а не прапорець у `cancel`, бо правило інше: `cancelHours`
+   * не застосовується, `cancelled_late` не виникає, а оплачене заняття завжди
+   * повертає кошти. Один метод на дві ролі довелось би розгалужувати всередині
+   * на кожному кроці — від перевірки прав до проводки.
+   *
+   * Повернення й звільнення слота — одна транзакція. Авторитетна перевірка тут
+   * теж не в коді, а в умові `status = <прочитаний статус>` усередині UPDATE:
+   * студент міг скасувати це саме заняття в ту саму мить, і тоді повернення
+   * пішло б удруге.
+   */
+  async cancelByTeacher(slotId: number, teacherId: number, now = new Date()) {
+    const slot = await this.slots.byId(slotId);
+    if (!slot || slot.teacher_id !== teacherId) {
+      throw new NotFoundException('слот не знайдено');
+    }
+
+    let outcome: TeacherCancelOutcome;
+    try {
+      outcome = teacherCancelOutcome(
+        { status: slot.status, startAt: new Date(slot.start_at) },
+        now,
+      );
+    } catch (e) {
+      if (e instanceof NothingToCancelError || e instanceof LessonAlreadyStartedError) {
+        throw new BadRequestException(e.message);
+      }
+      throw e;
+    }
+
+    // Обидва скасовувані статуси за інваріантом бази мають студента. Якщо його
+    // немає — це поломка даних, і повертати кошти «нікому» не можна.
+    const studentId = slot.student_id;
+    if (studentId === null) {
+      throw new ConflictException('у занятті немає студента — повертати нікому');
+    }
+
+    return this.db.transaction().execute(async (tx) => {
+      const moved = await this.slots.transition(slotId, slot.status, outcome.status, tx);
+      if (!moved) throw new ConflictException('стан слота щойно змінився');
+
+      if (outcome.refund) {
+        await this.charge.refundForLesson(tx, studentId, slotId, slot.price_minor);
+      }
+
+      return {
+        id: moved.id,
+        status: moved.status,
+        studentId,
+        refunded: outcome.refund,
+        refundedMinor: outcome.refund ? slot.price_minor : 0,
+      };
     });
   }
 

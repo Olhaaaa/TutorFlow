@@ -63,6 +63,24 @@ export class SchedulingController {
     return this.scheduling.teacherCalendar(teacher.id, new Date(q.from), new Date(q.to));
   }
 
+  @Post('teacher/slots/:id/cancel')
+  @ApiOperation({
+    summary: 'Скасувати заняття викладачем',
+    description:
+      'Година звільняється, а списані за заняття кошти повертаються на баланс '
+      + 'студента повністю. Правило cancelHours тут не діє: воно захищає час '
+      + 'викладача від студента, а не навпаки, тому cancelled_late не виникає.',
+  })
+  @ApiResponse({ status: 400, description: 'скасовувати нічого або заняття вже почалось' })
+  @ApiResponse({ status: 404, description: 'слот не знайдено або належить іншому викладачу' })
+  @ApiResponse({ status: 409, description: 'стан слота щойно змінився' })
+  cancelByTeacher(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentTeacher() teacher: { id: number },
+  ) {
+    return this.scheduling.cancelByTeacher(id, teacher.id);
+  }
+
   @Get('teacher/availability')
   @ApiOperation({ summary: 'Тижневий шаблон доступності' })
   listAvailability(@CurrentTeacher() teacher: { id: number }) {

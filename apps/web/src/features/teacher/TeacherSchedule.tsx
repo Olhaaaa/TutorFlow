@@ -57,9 +57,25 @@ const STATUS: Record<
   cancelled_late: { label: 'скасовано пізно', variant: 'late', Icon: CircleSlash },
 };
 
-function TeacherSlot({ slot, tz }: { slot: TeacherSlotView; tz: string }) {
+interface SlotProps {
+  slot: TeacherSlotView;
+  tz: string;
+  /** Чи є що скасовувати: заняття зайняте й ще не почалось. */
+  cancellable: boolean;
+  /** Перший клік уже був — наступний скасує по-справжньому. */
+  armed: boolean;
+  busy: boolean;
+  onArm: () => void;
+  onConfirm: () => void;
+}
+
+function TeacherSlot({ slot, tz, cancellable, armed, busy, onArm, onConfirm }: SlotProps) {
   const s = STATUS[slot.status];
   const { Icon } = s;
+  const time = hhmm(slot.startAt, tz);
+  // На суцільній сосновій заливці оплаченого заняття звичайна outline-кнопка
+  // нечитабельна — колір вона мусить брати від самого слота.
+  const onSolid = s.variant === 'paid';
 
   return (
     <div
@@ -68,15 +84,44 @@ function TeacherSlot({ slot, tz }: { slot: TeacherSlotView; tz: string }) {
     >
       <div className="flex items-center gap-1">
         <Icon className="size-3.5 shrink-0 opacity-80" aria-hidden />
-        <span className="font-mono text-sm font-medium tabular-nums">
-          {hhmm(slot.startAt, tz)}
-        </span>
+        <span className="font-mono text-sm font-medium tabular-nums">{time}</span>
       </div>
       <span className="line-clamp-2 text-xs leading-tight">
         {slot.student ? slot.student.name : s.label}
       </span>
       {slot.student && (
         <span className="text-[0.7rem] leading-tight opacity-80">{s.label}</span>
+      )}
+
+      {/*
+        Два кліки, а не один: скасування рухає чужі гроші, і випадкове
+        попадання по клітинці в щільній сітці коштувало б заняття. Діалогу
+        підтвердження тут немає навмисно — у клітинці на 7 рем він перекрив би
+        собою весь тиждень, а підпис на самій кнопці каже те саме.
+      */}
+      {armed && (
+        <span className="text-[0.7rem] leading-tight font-medium">
+          {slot.status === 'booked' ? `повернути ${money(slot.priceMinor)}?` : 'звільнити годину?'}
+        </span>
+      )}
+      {cancellable && (
+        <Button
+          size="xs"
+          variant={armed ? 'destructive' : 'outline'}
+          className={cn(
+            'mt-1 w-full',
+            !armed && onSolid
+              && 'border-slot-paid-fg/40 bg-transparent text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
+          )}
+          disabled={busy}
+          onClick={armed ? onConfirm : onArm}
+          aria-label={
+            armed ? `Підтвердити скасування заняття ${time}` : `Скасувати заняття ${time}`
+          }
+        >
+          {busy && <Loader2 className="animate-spin" aria-hidden />}
+          {armed ? 'підтвердити' : 'скасувати'}
+        </Button>
       )}
     </div>
   );
@@ -90,6 +135,9 @@ export function TeacherSchedule({ session }: { session: Session }) {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // Слот, що очікує підтвердження скасування, і слот, по якому запрос у дорозі.
+  const [armedId, setArmedId] = useState<number | null>(null);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   const anchor = useMemo(() => weekAnchor(cursor, tz), [cursor, tz]);
   const days = useMemo(() => weekDays(anchor), [anchor]);
@@ -97,6 +145,9 @@ export function TeacherSchedule({ session }: { session: Session }) {
   const load = useCallback(async () => {
     setLoading(true);
     setNow(new Date());
+    // Перезавантаження скидає наведений приціл: підтверджувати скасування
+    // слота, якого на екрані вже може не бути, не можна.
+    setArmedId(null);
     try {
       setSlots(await api.teacher.slots(session.token, addDays(anchor, -1), addDays(anchor, 8)));
     } catch (e) {
@@ -134,6 +185,29 @@ export function TeacherSchedule({ session }: { session: Session }) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setGenerating(false);
+    }
+  };
+
+  /**
+   * Скасування заняття викладачем. Повідомлення розрізняє два випадки, бо для
+   * викладача це різні розмови зі студентом: гроші повернулись — чи їх і не
+   * було.
+   */
+  const cancel = async (slot: TeacherSlotView) => {
+    setCancellingId(slot.id);
+    try {
+      const r = await api.teacher.cancel(session.token, slot.id);
+      toast.success(`Заняття ${hhmm(slot.startAt, tz)} скасовано`, {
+        description: r.refunded
+          ? `Годину звільнено, ${money(r.refundedMinor)} повернуто на баланс студента`
+          : 'Годину звільнено. Заняття не було оплачене, тому повертати нічого',
+      });
+      setArmedId(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -248,7 +322,20 @@ export function TeacherSchedule({ session }: { session: Session }) {
             keyOf={(s) => s.id}
             startAt={(s) => s.startAt}
             focus={(s) => s.status !== 'free'}
-            render={(s) => <TeacherSlot slot={s} tz={tz} />}
+            render={(s) => (
+              <TeacherSlot
+                slot={s}
+                tz={tz}
+                cancellable={
+                  (s.status === 'pre_booked' || s.status === 'booked')
+                  && new Date(s.startAt).getTime() > now.getTime()
+                }
+                armed={armedId === s.id}
+                busy={cancellingId === s.id}
+                onArm={() => setArmedId(s.id)}
+                onConfirm={() => void cancel(s)}
+              />
+            )}
           />
         )}
       </CardContent>

@@ -2,9 +2,13 @@
 #
 # Відмінність від лабораторної 1 не в коді, а в тому, ХТО що виконує. У лабі 1
 # один процес робив усе: віддавав API, віддавав SPA і сам, за таймером,
-# застосовував переходи станів. Тут переходи забрав окремий процес, схема
-# накладається окремим контейнером, а база стала своїм сервісом замість
-# керованого Neon.
+# застосовував переходи станів. Тут його розібрано на пʼять контейнерів:
+#
+#   postgres  база замість керованого Neon
+#   redis     шина подій між процесами
+#   migrate   одноразовий: накладає схему й завершується
+#   api       HTTP і SPA; таймера більше не має
+#   worker    переходи станів за розкладом + споживач подій
 #
 # Образ один на api і worker — той самий кореневий Dockerfile, що й у
 # розгортанні. Відрізняється лише команда: друга точка входу замість першої.
@@ -33,8 +37,12 @@ x-app: &app
     # працює все, крім підключення еквайрингу.
     PAYMENT_TOKEN_KEY: ${PAYMENT_TOKEN_KEY:-}
     PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+    # Шина подій. Без неї застосунок працює — події просто не публікуються.
+    REDIS_URL: redis://redis:6379
   depends_on:
     postgres:
+      condition: service_healthy
+    redis:
       condition: service_healthy
     migrate:
       condition: service_completed_successfully
@@ -53,6 +61,25 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tutorflow -d tutorflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Шина подій між процесами. Redis Streams, а не pub/sub: pub/sub губить
+  # повідомлення, якщо споживача в цю мить немає, а нам потрібно, щоб подія
+  # дочекалась воркера. Група споживачів тримає курсор і список
+  # непідтверджених повідомлень на боці Redis — саме її довжину в
+  # лабораторній 4 читає KEDA.
+  redis:
+    image: redis:8-alpine
+    # appendonly: стрім — буфер, але буфер, який не можна втрачати при
+    # перезапуску контейнера разом із непідтвердженими подіями.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -97,6 +124,7 @@ services:
       TEACHER_TIMEZONE: ${TEACHER_TIMEZONE:-Europe/Kyiv}
       PAYMENT_TOKEN_KEY: ${PAYMENT_TOKEN_KEY:-}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      REDIS_URL: redis://redis:6379
       # Єдиний процес, який тепер має таймер. В api це значення не задається
       # взагалі — переходи там більше не живуть.
       MAINTENANCE_INTERVAL_SEC: ${MAINTENANCE_INTERVAL_SEC:-60}
@@ -122,3 +150,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

@@ -1,0 +1,124 @@
+# Лабораторна 2: той самий застосунок, розкладений на контейнери.
+#
+# Відмінність від лабораторної 1 не в коді, а в тому, ХТО що виконує. У лабі 1
+# один процес робив усе: віддавав API, віддавав SPA і сам, за таймером,
+# застосовував переходи станів. Тут переходи забрав окремий процес, схема
+# накладається окремим контейнером, а база стала своїм сервісом замість
+# керованого Neon.
+#
+# Образ один на api і worker — той самий кореневий Dockerfile, що й у
+# розгортанні. Відрізняється лише команда: друга точка входу замість першої.
+# Так порівняння в лабі 3 лишається коректним: роз'їхались процеси, а не
+# реалізації.
+#
+#   docker compose -f lab2-compose/compose.yml up -d --build
+#   docker compose -f lab2-compose/compose.yml --profile seed run --rm seed
+#   docker compose -f lab2-compose/compose.yml logs -f worker
+#   docker compose -f lab2-compose/compose.yml down -v
+name: tutorflow-lab2
+
+# Спільна частина api і worker: той самий образ, те саме оточення, та сама
+# залежність від готової схеми. Різниця — в одному рядку command.
+x-app: &app
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  image: tutorflow:lab2
+  environment:
+    # Хост — ім'я сервісу: усередині мережі Compose його розводить власний DNS.
+    DATABASE_URL: postgres://tutorflow:tutorflow@postgres:5432/tutorflow
+    JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+    TEACHER_TIMEZONE: ${TEACHER_TIMEZONE:-Europe/Kyiv}
+    # Підставляються з .env у корені, якщо вони там є. Без PAYMENT_TOKEN_KEY
+    # працює все, крім підключення еквайрингу.
+    PAYMENT_TOKEN_KEY: ${PAYMENT_TOKEN_KEY:-}
+    PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: tutorflow
+      POSTGRES_USER: tutorflow
+      POSTGRES_PASSWORD: tutorflow
+    # Порт назовні не публікується навмисно: база потрібна лише сусіднім
+    # контейнерам, а 5432 на хості вже зайнятий компоузом для розробки.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tutorflow -d tutorflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Схема накладається ОКРЕМИМ одноразовим контейнером, а не при старті
+  # застосунку: інакше кілька екземплярів API почали б мігрувати базу
+  # навперебій. Контейнер відпрацьовує й завершується, а api з worker чекають
+  # саме успішного завершення — service_completed_successfully.
+  migrate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: tutorflow:lab2
+    command: ["node", "services/api/dist/db/migrate.js", "up"]
+    environment:
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres:5432/tutorflow
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["node", "services/api/dist/main.js"]
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    <<: *app
+    command: ["node", "services/api/dist/worker.js"]
+    environment:
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres:5432/tutorflow
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      TEACHER_TIMEZONE: ${TEACHER_TIMEZONE:-Europe/Kyiv}
+      PAYMENT_TOKEN_KEY: ${PAYMENT_TOKEN_KEY:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      # Єдиний процес, який тепер має таймер. В api це значення не задається
+      # взагалі — переходи там більше не живуть.
+      MAINTENANCE_INTERVAL_SEC: ${MAINTENANCE_INTERVAL_SEC:-60}
+
+  # Демо-дані. Під профілем, бо сідер робить TRUNCATE: запускається руками й
+  # лише тоді, коли цього справді хочуть.
+  #
+  # NODE_ENV перебивається на development навмисно: у самому сідері стоїть
+  # запобіжник, який відмовляється працювати в продакшні, а образ ставить
+  # NODE_ENV=production. Запобіжник правильний і лишається — саме він не дасть
+  # випадково витерти базу в розгортанні, — тому знімати його треба явно й
+  # лише для цього одного контейнера.
+  seed:
+    <<: *app
+    command: ["node", "services/api/dist/db/seed.js"]
+    environment:
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres:5432/tutorflow
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      TEACHER_TIMEZONE: ${TEACHER_TIMEZONE:-Europe/Kyiv}
+      NODE_ENV: development
+    restart: "no"
+    profiles: ["seed"]
+
+volumes:
+  pgdata:

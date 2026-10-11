@@ -116,6 +116,21 @@ export interface PaymentsTable {
   updated_at: ColumnType<Date, Date | string | undefined, Date | string>;
 }
 
+export interface NotificationsTable {
+  id: Generated<number>;
+  student_id: number;
+  /** Тип події, з якої нагадування народилось. */
+  kind: string;
+  text: string;
+  payload: ColumnType<unknown, string, string>;
+  /** Ідемпотентність споживача подій: unique у базі, а не перевірка в коді. */
+  dedup_key: string;
+  created_at: Generated<Timestamp>;
+  /** Канал доставки й час — заповнюються лише парою. */
+  channel: string | null;
+  sent_at: Timestamp | null;
+}
+
 export interface DB {
   teachers: TeachersTable;
   students: StudentsTable;
@@ -124,4 +139,5 @@ export interface DB {
   slots: SlotsTable;
   transactions: TransactionsTable;
   payments: PaymentsTable;
+  notifications: NotificationsTable;
 }

@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { config } from './config.js';
 import { MaintenanceService } from './maintenance/maintenance.service.js';
+import { NotificationsConsumer } from './notifications/notifications.consumer.js';
 import { WorkerModule } from './worker.module.js';
 
 /**
@@ -44,6 +45,7 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const maintenance = app.get(MaintenanceService);
+  const consumer = app.get(NotificationsConsumer);
   const intervalSec = config.maintenanceIntervalSec;
 
   /** Один прохід. Помилка не гасить воркер: наступний прохід спробує знову. */
@@ -86,6 +88,15 @@ async function bootstrap(): Promise<void> {
 
   log.log(`переходи станів кожні ${intervalSec} с`);
 
+  /*
+   * Дві роботи в одному процесі, і вони різні за природою. Переходи станів
+   * тягне ЧАС, тому вони живуть у циклі з інтервалом. Нагадування тягне
+   * ПОДІЯ, тому споживач висить на блокуючому читанні стріму й нічого не
+   * опитує. Розділяти їх на два контейнери сенсу поки немає: обидві мовчать,
+   * доки нема роботи. У лабораторній 4 розділить KEDA — за довжиною стріму.
+   */
+  const consuming = consumer.run(() => stopping, `worker-${process.pid}`);
+
   while (!stopping) {
     await tick();
     if (stopping) break;
@@ -94,6 +105,9 @@ async function bootstrap(): Promise<void> {
     await sleep.done;
   }
 
+  // Споживач доопрацьовує поточне повідомлення й виходить сам — на нього
+  // чекаємо, інакше процес закрив би з'єднання з базою посеред запису.
+  await consuming;
   await app.close();
   log.log('воркер спинився');
 }

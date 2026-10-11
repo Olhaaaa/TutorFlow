@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from './db/database.module.js';
+import { EventsModule } from './events/events.module.js';
 import { MaintenanceModule } from './maintenance/maintenance.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 
 /**
  * Корінь воркера.
@@ -16,6 +18,6 @@ import { MaintenanceModule } from './maintenance/maintenance.module.js';
  * разом із ними, а не доведеться писати його заново.
  */
 @Module({
-  imports: [DatabaseModule, MaintenanceModule],
+  imports: [DatabaseModule, EventsModule, MaintenanceModule, NotificationsModule],
 })
 export class WorkerModule {}

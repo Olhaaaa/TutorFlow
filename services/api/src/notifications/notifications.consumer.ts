@@ -11,6 +11,16 @@ import { NotificationsRepository } from './notifications.repository.js';
 const GROUP = 'notifications';
 
 /**
+ * Через скільки повідомлення, узяте й не підтверджене, вважається покинутим.
+ *
+ * Обробка триває мілісекунди, тому хвилина означає одне: споживач, який узяв
+ * це повідомлення, більше не живе. У лабораторній 4 це стане штатною подією —
+ * KEDA гасить поди, щойно стрім порожніє, і той, кого вбили між читанням і
+ * `XACK`, лишає по собі комірку в списку непідтверджених.
+ */
+const STALE_MS = 60_000;
+
+/**
  * Споживач подій: читає стрім і перетворює події на нагадування.
  *
  * Чому група споживачів, а не просте читання стріму: група тримає курсор на
@@ -74,7 +84,12 @@ export class NotificationsConsumer {
           { key: EVENTS_STREAM, id: '>' },
           { COUNT: 10, BLOCK: 5000 },
         );
-        if (!reply) continue; // за п'ять секунд нічого не прийшло
+        // Тиша — слушний момент підібрати покинуте. Під навантаженням цей
+        // виклик не робиться зовсім: спершу треба розгребти свіже.
+        if (!reply) {
+          await this.reclaimStale(client, consumerName);
+          continue;
+        }
 
         for (const stream of reply) {
           for (const message of stream.messages) {
@@ -90,6 +105,28 @@ export class NotificationsConsumer {
 
     if (client.isOpen) await client.quit();
     this.client = null;
+  }
+
+  /**
+   * Забрати повідомлення, які хтось узяв і не підтвердив.
+   *
+   * Без цього втрачається рівно те, через що й обрано групу споживачів: помер
+   * споживач — його комірка в PEL лежить вічно, і нагадування не надішле
+   * ніхто. `XAUTOCLAIM` переписує власника на нас і віддає повідомлення, після
+   * чого воно проходить звичайний шлях, включно з дедуплікацією.
+   */
+  private async reclaimStale(client: RedisClientType, consumerName: string): Promise<void> {
+    const claimed = await client.xAutoClaim(
+      EVENTS_STREAM, GROUP, consumerName, STALE_MS, '0', { COUNT: 10 },
+    );
+
+    for (const message of claimed.messages) {
+      // null трапляється, якщо запис зі стріму вже витерли тримінгом: комірку
+      // в PEL XAUTOCLAIM при цьому прибирає сам.
+      if (!message) continue;
+      this.log.warn(`підбираю покинуте повідомлення ${message.id}`);
+      await this.handle(client, message.id, message.message as Record<string, string>);
+    }
   }
 
   private async handle(

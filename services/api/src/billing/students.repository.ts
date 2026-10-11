@@ -79,6 +79,64 @@ export class StudentsRepository {
    * інакше два одночасні поповнення затерли б одне одного. База рахує приріст
    * атомарно в межах рядка.
    */
+  /* ---------- канал нагадувань ---------- */
+
+  /**
+   * Код привʼязки, який можна показати студентові. Якщо коду ще немає —
+   * створюється.
+   *
+   * `where telegram_link_code is null` усередині UPDATE, а не перевірка в
+   * коді: два одночасні відкриття екрана інакше створили б два коди, і один
+   * із них студент побачив би, а звʼязати ним чат не зміг.
+   */
+  async ensureLinkCode(studentId: number, code: string, tx?: Executor) {
+    await this.db(tx)
+      .updateTable('students')
+      .set({ telegram_link_code: code })
+      .where('id', '=', studentId)
+      .where('telegram_link_code', 'is', null)
+      .execute();
+
+    return this.telegramState(studentId, tx);
+  }
+
+  /** Стан каналу: чи привʼязаний чат і який код показувати. */
+  async telegramState(studentId: number, tx?: Executor) {
+    const row = await this.db(tx)
+      .selectFrom('students')
+      .select(['id', 'telegram_chat_id', 'telegram_link_code'])
+      .where('id', '=', studentId)
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  /**
+   * Привʼязати чат за кодом. Код згоряє: після привʼязки він більше не
+   * підходить нікому, тому повторне надсилання того самого коду іншим чатом
+   * нічого не перезапише.
+   *
+   * @returns студент, якщо код підійшов; null якщо такого коду немає.
+   */
+  async linkTelegram(code: string, chatId: number | string, tx?: Executor) {
+    const row = await this.db(tx)
+      .updateTable('students')
+      .set({ telegram_chat_id: Number(chatId), telegram_link_code: null })
+      .where('telegram_link_code', '=', code)
+      .returning(['id', 'name', 'teacher_id'])
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  async unlinkTelegram(studentId: number, tx?: Executor) {
+    await this.db(tx)
+      .updateTable('students')
+      .set({ telegram_chat_id: null, telegram_link_code: null })
+      .where('id', '=', studentId)
+      .execute();
+  }
+
   async shiftBalance(studentId: number, deltaMinor: number, tx?: Executor) {
     const row = await this.db(tx)
       .updateTable('students')

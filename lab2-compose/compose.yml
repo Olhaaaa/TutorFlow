@@ -39,6 +39,9 @@ x-app: &app
     PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
     # Шина подій. Без неї застосунок працює — події просто не публікуються.
     REDIS_URL: redis://redis:6379
+    # Канал нагадувань. Без токена канал вимкнений: нагадування лишаються в
+    # журналі й видно їх у лозі воркера.
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
   depends_on:
     postgres:
       condition: service_healthy
@@ -125,6 +128,7 @@ services:
       PAYMENT_TOKEN_KEY: ${PAYMENT_TOKEN_KEY:-}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
       REDIS_URL: redis://redis:6379
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       # Єдиний процес, який тепер має таймер. В api це значення не задається
       # взагалі — переходи там більше не живуть.
       MAINTENANCE_INTERVAL_SEC: ${MAINTENANCE_INTERVAL_SEC:-60}

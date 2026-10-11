@@ -10,6 +10,7 @@ import { MaintenanceModule } from './maintenance/maintenance.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
+import { TelegramModule } from './telegram/telegram.module.js';
 
 /**
  * Модулі збігаються з межами доменів. У лабораторній 3 кожен стає сервісом:
@@ -26,6 +27,7 @@ import { SchedulingModule } from './scheduling/scheduling.module.js';
     PaymentsModule,
     MaintenanceModule,
     NotificationsModule,
+    TelegramModule,
     AuthModule,
     // Збірка фронтенду віддається тим самим процесом: одна одиниця
     // розгортання й жодних питань із CORS. exclude обовʼязковий — без нього

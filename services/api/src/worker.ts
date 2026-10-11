@@ -4,6 +4,8 @@ import { NestFactory } from '@nestjs/core';
 import { config } from './config.js';
 import { MaintenanceService } from './maintenance/maintenance.service.js';
 import { NotificationsConsumer } from './notifications/notifications.consumer.js';
+import { NotificationsDelivery } from './notifications/notifications.delivery.js';
+import { TelegramUpdates } from './telegram/telegram.updates.js';
 import { WorkerModule } from './worker.module.js';
 
 /**
@@ -46,18 +48,24 @@ async function bootstrap(): Promise<void> {
 
   const maintenance = app.get(MaintenanceService);
   const consumer = app.get(NotificationsConsumer);
+  const delivery = app.get(NotificationsDelivery);
+  const telegram = app.get(TelegramUpdates);
   const intervalSec = config.maintenanceIntervalSec;
 
   /** Один прохід. Помилка не гасить воркер: наступний прохід спробує знову. */
   const tick = async (): Promise<void> => {
     try {
       const r = await maintenance.runOnce();
+      // Нагадування, які не вдалось доставити раніше: канал міг бути
+      // недоступним кілька хвилин, і це та сама робота «час настав».
+      const resent = await delivery.retryPending();
       // Тиша, коли робити нема чого: інакше лог засмічується щохвилини.
-      if (r.holdsExpired || r.lessonsCompleted || r.paymentsExpired) {
+      if (r.holdsExpired || r.lessonsCompleted || r.paymentsExpired || resent) {
         log.log(
           `звільнено закріплень: ${r.holdsExpired}, `
           + `проведено занять: ${r.lessonsCompleted}, `
-          + `протерміновано рахунків: ${r.paymentsExpired}`,
+          + `протерміновано рахунків: ${r.paymentsExpired}, `
+          + `дослано нагадувань: ${resent}`,
         );
       }
     } catch (e) {
@@ -96,6 +104,9 @@ async function bootstrap(): Promise<void> {
    * доки нема роботи. У лабораторній 4 розділить KEDA — за довжиною стріму.
    */
   const consuming = consumer.run(() => stopping, `worker-${process.pid}`);
+  // Третя робота: оновлення від бота. Теж висить на блокуючому запросі, тому
+  // окремого процесу не просить.
+  const listening = telegram.run(() => stopping);
 
   while (!stopping) {
     await tick();
@@ -107,7 +118,7 @@ async function bootstrap(): Promise<void> {
 
   // Споживач доопрацьовує поточне повідомлення й виходить сам — на нього
   // чекаємо, інакше процес закрив би з'єднання з базою посеред запису.
-  await consuming;
+  await Promise.all([consuming, listening]);
   await app.close();
   log.log('воркер спинився');
 }

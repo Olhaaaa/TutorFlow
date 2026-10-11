@@ -4,18 +4,11 @@ import { config } from '../config.js';
 import {
   EVENTS_STREAM, dedupKey, renderNotification, type DomainEvent,
 } from '../events/events.js';
+import { NotificationsDelivery } from './notifications.delivery.js';
 import { NotificationsRepository } from './notifications.repository.js';
 
 /** Імʼя групи споживачів. Інші споживачі того самого стріму отримають свої. */
 const GROUP = 'notifications';
-
-/**
- * Канал доставки. Поки що лог: нагадування видно в `docker compose logs
- * worker`. Telegram стане другим значенням цього поля, і більше нічого в
- * споживачі не зміниться — саме для цього `channel` є колонкою, а не
- * прапорцем `sent`.
- */
-const CHANNEL = 'log';
 
 /**
  * Споживач подій: читає стрім і перетворює події на нагадування.
@@ -36,7 +29,10 @@ export class NotificationsConsumer {
   private readonly log = new Logger('Notifications');
   private client: RedisClientType | null = null;
 
-  constructor(private readonly notifications: NotificationsRepository) {}
+  constructor(
+    private readonly notifications: NotificationsRepository,
+    private readonly delivery: NotificationsDelivery,
+  ) {}
 
   /**
    * Читати стрім, доки не попросять спинитись.
@@ -123,10 +119,12 @@ export class NotificationsConsumer {
       if (!created) {
         this.log.log(`${event.type}: повторна доставка, нагадування вже є`);
       } else {
-        // Канал доставки. Поки що лог — і саме його ми позначаємо як канал,
-        // а не вдаємо, що нагадування доставлене нікуди.
-        this.log.log(`студенту ${created.student_id}: ${created.text}`);
-        await this.notifications.markSent(created.id, CHANNEL);
+        // Канал вибирає доставка: є привʼязаний чат — Telegram, немає — лог.
+        // Якщо канал є, але недоступний, рядок лишиться недоставленим, і його
+        // забере наступний прохід воркера. Подію при цьому підтверджуємо:
+        // нагадування вже записане, і повторне читання стріму його не
+        // відправило б, бо дедуплікація не дала б створити другий рядок.
+        await this.delivery.deliver(created.id, created.student_id, created.text);
       }
 
       await client.xAck(EVENTS_STREAM, GROUP, messageId);

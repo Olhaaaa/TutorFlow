@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { TelegramModule } from '../telegram/telegram.module.js';
 import { NotificationsConsumer } from './notifications.consumer.js';
+import { NotificationsDelivery } from './notifications.delivery.js';
 import { NotificationsRepository } from './notifications.repository.js';
 
 /**
@@ -10,7 +12,8 @@ import { NotificationsRepository } from './notifications.repository.js';
  * а не хто й коли це робить.
  */
 @Module({
-  providers: [NotificationsRepository, NotificationsConsumer],
-  exports: [NotificationsRepository, NotificationsConsumer],
+  imports: [TelegramModule],
+  providers: [NotificationsRepository, NotificationsDelivery, NotificationsConsumer],
+  exports: [NotificationsRepository, NotificationsDelivery, NotificationsConsumer],
 })
 export class NotificationsModule {}

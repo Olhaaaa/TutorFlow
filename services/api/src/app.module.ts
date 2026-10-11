@@ -2,10 +2,12 @@ import { join } from 'node:path';
 import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { DatabaseModule } from './db/database.module.js';
+import { EventsModule } from './events/events.module.js';
 import { HealthController } from './health/health.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { MaintenanceModule } from './maintenance/maintenance.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 
@@ -18,10 +20,12 @@ import { SchedulingModule } from './scheduling/scheduling.module.js';
 @Module({
   imports: [
     DatabaseModule,
+    EventsModule,
     SchedulingModule,
     BillingModule,
     PaymentsModule,
     MaintenanceModule,
+    NotificationsModule,
     AuthModule,
     // Збірка фронтенду віддається тим самим процесом: одна одиниця
     // розгортання й жодних питань із CORS. exclude обовʼязковий — без нього

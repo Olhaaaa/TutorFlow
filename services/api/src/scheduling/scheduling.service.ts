@@ -8,6 +8,7 @@ import {
   type TeacherCancelOutcome,
 } from '@tutorflow/core';
 import { KYSELY, type Database } from '../db/database.module.js';
+import { EventBus } from '../events/event-bus.js';
 import { AvailabilityRepository } from './availability.repository.js';
 import { CHARGE_PORT, type ChargePort } from './ports.js';
 import { SlotsRepository, type Executor } from './slots.repository.js';
@@ -28,6 +29,7 @@ export class SchedulingService {
     private readonly teachers: TeachersRepository,
     private readonly availability: AvailabilityRepository,
     @Inject(CHARGE_PORT) private readonly charge: ChargePort,
+    private readonly events: EventBus,
   ) {}
 
   /** Розклад очима викладача: сирий статус і хто записаний. */
@@ -199,7 +201,7 @@ export class SchedulingService {
       throw new ConflictException('у занятті немає студента — повертати нікому');
     }
 
-    return this.db.transaction().execute(async (tx) => {
+    const result = await this.db.transaction().execute(async (tx) => {
       const moved = await this.slots.transition(slotId, slot.status, outcome.status, tx);
       if (!moved) throw new ConflictException('стан слота щойно змінився');
 
@@ -215,6 +217,20 @@ export class SchedulingService {
         refundedMinor: outcome.refund ? slot.price_minor : 0,
       };
     });
+
+    // Скасування — єдина операція, про яку студент НЕ дізнається сам: заняття
+    // просто зникає з його сітки. Подія публікується після коміту, бо описує
+    // те, що вже сталось; якщо шина недоступна, скасування від цього не
+    // скасовується — лише нагадування не піде.
+    await this.events.publish({
+      type: 'lesson.cancelled_by_teacher',
+      slotId: result.id,
+      studentId,
+      startAt: new Date(slot.start_at).toISOString(),
+      refundedMinor: result.refundedMinor,
+    });
+
+    return result;
   }
 
   async setAvailability(

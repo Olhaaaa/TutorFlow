@@ -16,6 +16,7 @@ import { PaymentsRepository } from './payments.repository.js';
 import { TokenCipher } from './token-cipher.js';
 import { TeachersRepository } from '../scheduling/teachers.repository.js';
 import { returnUrl, webhookUrl } from './urls.js';
+import { EventBus } from '../events/event-bus.js';
 
 /** Провайдер говорить про рахунок, ми — про гроші. Переклад одним місцем. */
 const STATUS: Record<MonoInvoiceStatus, PaymentStatusColumn> = {
@@ -53,6 +54,7 @@ export class PaymentsService {
     private readonly mono: MonobankClient,
     private readonly teachers: TeachersRepository,
     private readonly cipher: TokenCipher,
+    private readonly events: EventBus,
   ) {}
 
   /* ---------- підключення еквайрингу викладачем ---------- */
@@ -249,11 +251,11 @@ export class PaymentsService {
    * одна, а не дві схожі.
    */
   private async creditInvoice(
-    payment: Pick<PaymentRow, 'student_id' | 'amount_minor'>,
+    payment: Pick<PaymentRow, 'id' | 'student_id' | 'amount_minor'>,
     invoiceId: string,
     raw: unknown,
   ) {
-    return this.db
+    const result = await this.db
       .transaction()
       .execute(async (tx) => {
         const credited = await this.billing.credit(
@@ -291,6 +293,23 @@ export class PaymentsService {
         }
         throw e;
       });
+
+    // Подія публікується ПІСЛЯ коміту й лише якщо кошти справді зарахувала ця
+    // спроба. Опублікувати її всередині транзакції означало б пообіцяти факт,
+    // який ще може відкотитись; опублікувати при повторній доставці — надіслати
+    // студентові друге нагадування про те саме.
+    if (result.credited) {
+      await this.events.publish({
+        type: 'payment.credited',
+        paymentId: payment.id,
+        studentId: payment.student_id,
+        amountMinor: payment.amount_minor,
+        balanceMinor: result.balanceMinor,
+        convertedSlots: result.convertedSlots,
+      });
+    }
+
+    return result;
   }
 
   /**

@@ -25,6 +25,18 @@ function required(name: string): string {
   return v;
 }
 
+/**
+ * Необовʼязкова змінна. ПОРОЖНІЙ рядок означає «не задано», і це не
+ * дріб'язок: у Compose запис `TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}`
+ * передає в контейнер саму змінну з порожнім значенням, а не відсутність
+ * змінної. З `?? null` канал вважався налаштованим і бот опитував Telegram із
+ * пустим токеном, отримуючи 404 кожні три секунди.
+ */
+function optional(name: string): string | null {
+  const v = process.env[name]?.trim();
+  return v ? v : null;
+}
+
 export const config = {
   databaseUrl: required('DATABASE_URL'),
   port: Number(process.env.PORT ?? 8080),
@@ -48,7 +60,7 @@ export const config = {
    * довелося б прописувати другим деплоєм. Явно заданий PUBLIC_BASE_URL має
    * пріоритет: він потрібен для власного домену.
    */
-  publicBaseUrl: process.env.PUBLIC_BASE_URL ?? process.env.RENDER_EXTERNAL_URL ?? null,
+  publicBaseUrl: optional('PUBLIC_BASE_URL') ?? optional('RENDER_EXTERNAL_URL'),
 
   /**
    * Як часто застосовувати переходи станів за часом: звільняти неоплачені
@@ -65,14 +77,14 @@ export const config = {
    * еквайринг не можна — застосунок при цьому працює, просто вкладка «Оплата»
    * відповідає 503. Окремий від JWT_SECRET навмисно: різна ціна витоку.
    */
-  paymentTokenKey: process.env.PAYMENT_TOKEN_KEY ?? null,
+  paymentTokenKey: optional('PAYMENT_TOKEN_KEY'),
 
   /**
    * Шина подій. Без неї застосунок працює — події просто не публікуються, а
    * переходи станів робить прохід воркера за розкладом. Саме так він
    * запускається локально й розгорнутий у лабораторній 1.
    */
-  redisUrl: process.env.REDIS_URL ?? null,
+  redisUrl: optional('REDIS_URL'),
 
   monobank: {
     /**
@@ -80,7 +92,7 @@ export const config = {
      * викладачів, які не підключили власний рахунок, — зручно для
      * одноосібного розгортання й для демонстрації.
      */
-    token: process.env.MONOBANK_TOKEN ?? null,
+    token: optional('MONOBANK_TOKEN'),
     apiBase: process.env.MONOBANK_API_BASE ?? 'https://api.monobank.ua',
   },
 };

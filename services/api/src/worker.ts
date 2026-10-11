@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { hostname } from 'node:os';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { config } from './config.js';
@@ -6,6 +7,7 @@ import { MaintenanceService } from './maintenance/maintenance.service.js';
 import { NotificationsConsumer } from './notifications/notifications.consumer.js';
 import { NotificationsDelivery } from './notifications/notifications.delivery.js';
 import { TelegramUpdates } from './telegram/telegram.updates.js';
+import { parseWorkerRoles } from './worker-roles.js';
 import { WorkerModule } from './worker.module.js';
 
 /**
@@ -26,6 +28,10 @@ import { WorkerModule } from './worker.module.js';
  * Інтервал задає `MAINTENANCE_INTERVAL_SEC`. Нуль означає «один прохід і
  * вийти»: у такому вигляді воркер придатний і для `docker compose run`, і для
  * CronJob, де розкладом керує не процес, а платформа.
+ *
+ * `WORKER_ROLES` вибирає, які з трьох робіт виконує цей процес. У лабораторній
+ * 2 їх усі робить один контейнер; у лабораторній 4 вони розійдуться, бо
+ * масштабуються по-різному — див. worker-roles.ts.
  */
 const log = new Logger('Worker');
 
@@ -52,6 +58,17 @@ async function bootstrap(): Promise<void> {
   const telegram = app.get(TelegramUpdates);
   const intervalSec = config.maintenanceIntervalSec;
 
+  const roles = parseWorkerRoles(config.workerRoles);
+  log.log(`роли: ${roles.join(', ')}`);
+
+  /*
+   * Імʼя споживача мусить бути УНІКАЛЬНИМ на процес, інакше два поди ділили б
+   * одну комірку в списку непідтверджених повідомлень Redis. У контейнері
+   * процес завжди має pid 1, тому самого pid не досить — а ось hostname у
+   * Kubernetes дорівнює імені пода, і він унікальний за побудовою.
+   */
+  const consumerName = `${hostname()}-${process.pid}`;
+
   /** Один прохід. Помилка не гасить воркер: наступний прохід спробує знову. */
   const tick = async (): Promise<void> => {
     try {
@@ -73,9 +90,11 @@ async function bootstrap(): Promise<void> {
     }
   };
 
+  // Один прохід і вихід — вигляд для CronJob. Решта ролей у такому режимі не
+  // має сенсу: блокуюче читання стріму не має кінця.
   if (intervalSec <= 0) {
     log.log('один прохід (MAINTENANCE_INTERVAL_SEC=0)');
-    await tick();
+    if (roles.includes('transitions')) await tick();
     await app.close();
     return;
   }
@@ -94,7 +113,7 @@ async function bootstrap(): Promise<void> {
   process.on('SIGTERM', () => stop('SIGTERM'));
   process.on('SIGINT', () => stop('SIGINT'));
 
-  log.log(`переходи станів кожні ${intervalSec} с`);
+  if (roles.includes('transitions')) log.log(`переходи станів кожні ${intervalSec} с`);
 
   /*
    * Дві роботи в одному процесі, і вони різні за природою. Переходи станів
@@ -103,13 +122,17 @@ async function bootstrap(): Promise<void> {
    * опитує. Розділяти їх на два контейнери сенсу поки немає: обидві мовчать,
    * доки нема роботи. У лабораторній 4 розділить KEDA — за довжиною стріму.
    */
-  const consuming = consumer.run(() => stopping, `worker-${process.pid}`);
+  const consuming = roles.includes('events')
+    ? consumer.run(() => stopping, consumerName)
+    : Promise.resolve();
   // Третя робота: оновлення від бота. Теж висить на блокуючому запросі, тому
-  // окремого процесу не просить.
-  const listening = telegram.run(() => stopping);
+  // окремого процесу не просить — доки процес один.
+  const listening = roles.includes('bot')
+    ? telegram.run(() => stopping)
+    : Promise.resolve();
 
   while (!stopping) {
-    await tick();
+    if (roles.includes('transitions')) await tick();
     if (stopping) break;
     const sleep = interruptibleSleep(intervalSec * 1000);
     wakeUp = sleep.wake;

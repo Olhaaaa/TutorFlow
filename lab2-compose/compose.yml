@@ -132,6 +132,14 @@ services:
       # Єдиний процес, який тепер має таймер. В api це значення не задається
       # взагалі — переходи там більше не живуть.
       MAINTENANCE_INTERVAL_SEC: ${MAINTENANCE_INTERVAL_SEC:-60}
+      # Усі три роли в одному процесі — так і має бути, доки процес один.
+      # У лабораторній 4 вони розійдуться, бо масштабуються по-різному:
+      #   WORKER_ROLES=events       N реплік, KEDA за довжиною стріму
+      #   WORKER_ROLES=bot          рівно 1 репліка: Telegram не дає
+      #                             getUpdates із двох процесів
+      #   WORKER_ROLES=transitions  узагалі не процес, а CronJob з
+      #                             MAINTENANCE_INTERVAL_SEC=0
+      WORKER_ROLES: ${WORKER_ROLES:-}
 
   # Демо-дані. Під профілем, бо сідер робить TRUNCATE: запускається руками й
   # лише тоді, коли цього справді хочуть.

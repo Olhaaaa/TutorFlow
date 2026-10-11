@@ -100,6 +100,18 @@ export interface GenerateResult {
   to: string;
 }
 
+/** Стан каналу нагадувань. Віддає GET /api/me/telegram. */
+export interface TelegramState {
+  /** Чи налаштований канал на сервері взагалі. */
+  available: boolean;
+  linked: boolean;
+  /** Одноразовий код привʼязки. Null, якщо чат уже привʼязаний. */
+  code: string | null;
+  botUsername: string | null;
+  /** Посилання, яке відкриває бота й передає код за студента. */
+  deepLink: string | null;
+}
+
 /* ---------- платежі ---------- */
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'expired';

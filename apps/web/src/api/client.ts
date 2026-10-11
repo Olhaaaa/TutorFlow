@@ -1,7 +1,7 @@
 import type {
   AuditResult, AvailabilityRule, BookResult, CancelResult, GenerateResult,
   Enrollment, MaintenanceResult, PaymentConnection, PaymentView, SlotView,
-  Student, TeacherCancelResult, TeacherSlotView, TopupResult,
+  Student, TeacherCancelResult, TeacherSlotView, TelegramState, TopupResult,
 } from './types.js';
 
 /**
@@ -130,6 +130,12 @@ export const api = {
 
     /** Чи підключив викладач цього студента приймання оплати. */
     options: (t: string) => request<{ enabled: boolean }>('/payments/options', t),
+  },
+
+  /** Канал нагадувань. Привʼязка чату — дія студента над власним профілем. */
+  telegram: {
+    state: (t: string) => request<TelegramState>('/me/telegram', t),
+    unlink: (t: string) => request<TelegramState>('/me/telegram', t, { method: 'DELETE' }),
   },
 
   /** Маршрути кабінету викладача. Усі вимагають токен із роллю teacher. */

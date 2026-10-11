@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BalanceCard } from '@/features/balance/BalanceCard';
 import { PaymentReturn, TopupCard } from '@/features/balance/Topup';
+import { TelegramCard } from '@/features/profile/TelegramCard';
 import { TimezoneCard } from '@/features/profile/TimezoneCard';
 import { Calendar } from '@/features/calendar/Calendar';
 import { addDays, dayKey, weekAnchor, weekDays } from '@/features/calendar/time';
@@ -205,6 +206,7 @@ export function App() {
                   <BalanceCard balance={balance} tz={tz} />
                   <TopupCard session={session} />
                   <TimezoneCard session={session} onChange={changeTimezone} />
+                  <TelegramCard session={session} />
                 </div>
               )}
             </div>

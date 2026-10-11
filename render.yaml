@@ -1,0 +1,40 @@
+# Опис розгортання для Render. Лежить у репозиторії навмисно: сервіс
+# відтворюється з цього файлу, а не з кліків у панелі, і зміна параметра
+# видно в історії git поруч зі зміною коду.
+#
+# Образ збирається з кореневого Dockerfile — того самого, що перевірявся
+# локально. Фронтенд потрапляє всередину тим самим процесом Nest, тому
+# сервіс один і питань із CORS немає.
+
+services:
+  - type: web
+    name: tutorflow
+    runtime: docker
+    plan: free
+    region: frankfurt          # та сама сторона, що й база в Neon (eu-central-1)
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz  # поза префіксом /api — платформа стукає в корінь
+    autoDeploy: true
+
+    envVars:
+      # PORT платформа підставляє сама; застосунок читає його з оточення
+      # і слухає 0.0.0.0 — див. services/api/src/main.ts
+      - key: NODE_ENV
+        value: production
+      - key: TEACHER_TIMEZONE
+        value: Europe/Kyiv
+      # Періодичні переходи станів. На безкоштовному тарифі сервіс засинає
+      # після 15 хв простою разом із таймером — це та сама властивість, що
+      # й scale-to-zero, і той самий привід винести роботу у воркер у лабі 2.
+      - key: MAINTENANCE_INTERVAL_SEC
+        value: 300
+
+      # Рядок підключення до Neon: вводиться в панелі при створенні сервісу
+      # й у git не потрапляє. Потрібен ПУЛОВИЙ (хост із -pooler).
+      - key: DATABASE_URL
+        sync: false
+      # Ключ підпису токенів: Render генерує випадкове значення сам, тож воно
+      # не існує ніде, крім сервісу, і його ніхто не бачив.
+      - key: JWT_SECRET
+        generateValue: true

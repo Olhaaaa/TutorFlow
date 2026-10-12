@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { money } from '@/features/calendar/time';
+import { BusyCard } from '@/features/teacher/BusyCard';
 import { TimezoneCard } from '@/features/profile/TimezoneCard';
 import { EnrollmentsCard } from './EnrollmentsCard';
 
@@ -121,6 +122,8 @@ export function AvailabilityPanel({
 
       <div className="space-y-4">
         <TimezoneCard session={session} onChange={onTimezoneChange} />
+
+        <BusyCard session={session} />
 
         <Card>
           <CardHeader>

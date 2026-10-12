@@ -1,7 +1,8 @@
 import type {
   AuditResult, AvailabilityRule, BookResult, CancelResult, GenerateResult,
   Enrollment, MaintenanceResult, PaymentConnection, PaymentView, SlotView,
-  Student, TeacherCancelResult, TeacherSlotView, TelegramState, TopupResult,
+  CalendarLink, ExternalBusy, Student, TeacherCancelResult, TeacherSlotView,
+  TelegramState, TopupResult,
 } from './types.js';
 
 /**
@@ -171,6 +172,27 @@ export const api = {
       request<Student>('/teacher/students', t, { method: 'POST', body: JSON.stringify(s) }),
 
     availability: (t: string) => request<AvailabilityRule[]>('/teacher/availability', t),
+
+    /** Зайнятість поза розкладом: та сама межа, що й інтеграція з чужим календарем. */
+    busy: (t: string, from: Date, to: Date) =>
+      request<ExternalBusy[]>(
+        `/teacher/busy?from=${from.toISOString()}&to=${to.toISOString()}`,
+        t,
+      ),
+
+    addBusy: (
+      t: string,
+      b: { startAt: string; endAt: string; title?: string },
+    ) =>
+      request<ExternalBusy>('/teacher/busy', t, { method: 'POST', body: JSON.stringify(b) }),
+
+    removeBusy: (t: string, id: number) =>
+      request<{ id: number }>(`/teacher/busy/${id}`, t, { method: 'DELETE' }),
+
+    calendarLink: (t: string) => request<CalendarLink>('/teacher/calendar-link', t),
+
+    revokeCalendarLink: (t: string) =>
+      request<{ revoked: boolean }>('/teacher/calendar-link', t, { method: 'DELETE' }),
 
     enrollments: (t: string) => request<Enrollment[]>('/teacher/enrollments', t),
 

@@ -36,7 +36,32 @@ export interface LessonCancelledByTeacherEvent {
   refundedMinor: number;
 }
 
-export type DomainEvent = PaymentCreditedEvent | LessonCancelledByTeacherEvent;
+/** Заняття вже скоро — нагадування за добу. */
+export interface LessonUpcomingEvent {
+  type: 'lesson.upcoming';
+  slotId: number;
+  studentId: number;
+  startAt: string;
+  /** Чи заняття вже оплачене: від цього залежить, про що нагадувати. */
+  paid: boolean;
+}
+
+/** Строк оплати закріпленого заняття спливає. */
+export interface PaymentDueEvent {
+  type: 'payment.due';
+  slotId: number;
+  studentId: number;
+  startAt: string;
+  /** Момент, після якого закріплення звільняється. */
+  payBy: string;
+  priceMinor: number;
+}
+
+export type DomainEvent =
+  | PaymentCreditedEvent
+  | LessonCancelledByTeacherEvent
+  | LessonUpcomingEvent
+  | PaymentDueEvent;
 
 /**
  * Ключ, за яким споживач розпізнає ПОВТОРНУ доставку тієї самої події.
@@ -53,6 +78,13 @@ export function dedupKey(event: DomainEvent): string {
       return `payment.credited:${event.paymentId}`;
     case 'lesson.cancelled_by_teacher':
       return `lesson.cancelled_by_teacher:${event.slotId}`;
+    // Нагадування про одне заняття надсилається РАЗ, тому ключ — сам слот.
+    // Саме це робить прохід воркера безпечним: він публікує подію кілька разів
+    // поспіль, а нагадування лишається одне.
+    case 'lesson.upcoming':
+      return `lesson.upcoming:${event.slotId}`;
+    case 'payment.due':
+      return `payment.due:${event.slotId}`;
   }
 }
 
@@ -93,6 +125,21 @@ export function renderNotification(event: DomainEvent): RenderedNotification {
         text: event.refundedMinor > 0
           ? `Викладач скасував заняття. ${money(event.refundedMinor)} повернуто на баланс.`
           : 'Викладач скасував заняття. Воно не було оплачене, тому кошти не рухались.',
+      };
+    case 'lesson.upcoming':
+      return {
+        studentId: event.studentId,
+        kind: event.type,
+        text: event.paid
+          ? 'Нагадування: заняття завтра.'
+          : 'Нагадування: заняття завтра, і воно ще не оплачене.',
+      };
+    case 'payment.due':
+      return {
+        studentId: event.studentId,
+        kind: event.type,
+        text: `Заняття коштує ${money(event.priceMinor)} і ще не оплачене. `
+          + 'Якщо не оплатити до кінця строку, місце звільниться.',
       };
   }
 }

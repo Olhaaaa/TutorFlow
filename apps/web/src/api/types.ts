@@ -146,6 +146,24 @@ export interface MaintenanceResult {
   holdsExpired: number;
   lessonsCompleted: number;
   paymentsExpired: number;
+  /** Нагадування, опубліковані цим проходом: про заняття завтра й про оплату. */
+  lessonsReminded: number;
+  paymentsReminded: number;
+}
+
+/** Інтервал зайнятості поза розкладом. Поля як у таблиці. */
+export interface ExternalBusy {
+  id: number;
+  start_at: string;
+  end_at: string;
+  source: 'manual' | 'google' | 'ics';
+  title: string | null;
+}
+
+/** Адреса стрічки .ics. `url` порожній, якщо на сервері не задано PUBLIC_BASE_URL. */
+export interface CalendarLink {
+  path: string;
+  url: string | null;
 }
 
 /** Постійне місце студента в розкладі. Поля як у таблиці. */

@@ -219,7 +219,8 @@ export function TeacherSchedule({ session }: { session: Session }) {
     setRefreshing(true);
     try {
       const r = await api.teacher.maintenance(session.token);
-      const changed = r.holdsExpired + r.lessonsCompleted + r.paymentsExpired;
+      const reminded = r.lessonsReminded + r.paymentsReminded;
+      const changed = r.holdsExpired + r.lessonsCompleted + r.paymentsExpired + reminded;
       if (changed === 0) {
         toast.success('Усе актуальне', { description: 'Переходів, час яких настав, не знайшлось' });
       } else {
@@ -227,7 +228,10 @@ export function TeacherSchedule({ session }: { session: Session }) {
           description:
             `звільнено закріплень: ${r.holdsExpired}, `
             + `проведено занять: ${r.lessonsCompleted}, `
-            + `протерміновано рахунків: ${r.paymentsExpired}`,
+            + `протерміновано рахунків: ${r.paymentsExpired}`
+            // Нагадування нічого не змінюють у базі, тому згадуються окремо й
+            // лише коли їх справді було про що надіслати.
+            + (reminded > 0 ? `; нагадувань надіслано: ${reminded}` : ''),
         });
       }
       await load();

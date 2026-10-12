@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   bookRejection, holdDeadline, isHoldExpired,
   cancelOutcome, isCancellationFree, isCompleted, teacherCancelOutcome,
+  reminderWindow, REMINDER_LEAD_HOURS,
 } from '../src/rules/scheduling.js';
 
 const NOW = new Date('2026-10-14T12:00:00Z');
@@ -124,5 +125,39 @@ describe('скасування викладачем', () => {
   it('заняття, яке вже почалось, скасувати не можна', () => {
     expect(() => teacherCancelOutcome({ status: 'booked', startAt: h(-0.5) }, NOW)).toThrow();
     expect(() => teacherCancelOutcome({ status: 'booked', startAt: NOW }, NOW)).toThrow();
+  });
+});
+
+describe('вікно нагадувань', () => {
+  it('дивиться на добу вперед', () => {
+    const w = reminderWindow(NOW, 0);
+    expect(w.to).toEqual(h(REMINDER_LEAD_HOURS));
+    expect(w.from).toEqual(h(REMINDER_LEAD_HOURS));
+  });
+
+  it('запас назад розширює вікно, а не зсуває його', () => {
+    const w = reminderWindow(NOW, 15);
+    expect(w.to).toEqual(h(24));
+    expect(w.from).toEqual(new Date(h(24).getTime() - 15 * 60_000));
+  });
+
+  it('заняття, до якого рівно доба, у вікно потрапляє', () => {
+    const w = reminderWindow(NOW, 15);
+    const lesson = h(24);
+    expect(lesson >= w.from && lesson <= w.to).toBe(true);
+  });
+
+  it('заняття через тиждень і заняття через годину — ні', () => {
+    const w = reminderWindow(NOW, 15);
+    for (const at of [h(24 * 7), h(1), h(-1)]) {
+      expect(at >= w.from && at <= w.to).toBe(false);
+    }
+  });
+
+  it('вікно рухається разом із now, тому сусідні проходи перекриваються запасом', () => {
+    const later = new Date(NOW.getTime() + 5 * 60_000);
+    const a = reminderWindow(NOW, 15);
+    const b = reminderWindow(later, 15);
+    expect(b.from < a.to).toBe(true);
   });
 });

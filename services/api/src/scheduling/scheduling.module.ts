@@ -1,6 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { AvailabilityRepository } from './availability.repository.js';
+import { ExternalBusyRepository } from './external-busy.repository.js';
 import { BillingModule } from '../billing/billing.module.js';
+import { RemindersService } from './reminders.service.js';
+import { CalendarController } from './calendar.controller.js';
 import { SchedulingController } from './scheduling.controller.js';
 import { SchedulingService } from './scheduling.service.js';
 import { SlotsRepository } from './slots.repository.js';
@@ -15,13 +18,15 @@ import { TeachersRepository } from './teachers.repository.js';
  */
 @Module({
   imports: [forwardRef(() => BillingModule)],
-  controllers: [SchedulingController],
+  controllers: [SchedulingController, CalendarController],
   providers: [
     SchedulingService,
+    RemindersService,
     SlotsRepository,
     TeachersRepository,
     AvailabilityRepository,
+    ExternalBusyRepository,
   ],
-  exports: [SchedulingService, SlotsRepository, TeachersRepository],
+  exports: [SchedulingService, RemindersService, SlotsRepository, TeachersRepository],
 })
 export class SchedulingModule {}

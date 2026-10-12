@@ -138,6 +138,83 @@ export class SlotsRepository {
       .execute();
   }
 
+  /**
+   * ЄДИНА функція доступності: які слоти викладача вільні насправді.
+   *
+   * «Насправді» означає з урахуванням зайнятості поза нашим розкладом. Доки
+   * всі питання «чи вільна ця година» йдуть через цей запрос, інтеграція з
+   * чужим календарем лишається однією таблицею й одним `not exists` — а не
+   * правкою в кожному місці, де хтось вирішив сам порівняти час.
+   *
+   * Перетин перевіряється оператором `&&` по `tstzrange`, тому працює
+   * GiST-індекс, а не послідовний перебір. Інтервал напіввідкритий `[)`:
+   * заняття, що починається рівно тоді, коли закінчується зовнішня подія,
+   * конфліктом НЕ є.
+   */
+  async availableSlots(teacherId: number, from: Date, to: Date, tx?: Executor) {
+    const [free, blocked] = await Promise.all([
+      this.db(tx)
+        .selectFrom('slots')
+        .select(['id', 'start_at', 'end_at', 'price_minor'])
+        .where('teacher_id', '=', teacherId)
+        .where('status', '=', 'free')
+        .where('start_at', '>=', from)
+        .where('start_at', '<', to)
+        .orderBy('start_at')
+        .execute(),
+      this.blockedByExternal(teacherId, from, to, tx),
+    ]);
+
+    // Предикат «зайнято зовнішнім» живе РІВНО в одному запросі —
+    // blockedByExternal. Написати той самий `exists` ще й тут означало б
+    // одразу зламати те, заради чого ця функція й існує: щоб правило
+    // доступності було одне. Ціна — два звернення замість одного; для вікна
+    // календаря це нічого не варте.
+    return free.filter((slot) => !blocked.has(slot.id));
+  }
+
+  /**
+   * Ті самі слоти, але лише ідентифікатори зайнятих зовнішнім: календар
+   * студента показує їх як зайняті, а не ховає. Ховати було б гірше — слот
+   * зник би з сітки без причини.
+   */
+  async blockedByExternal(teacherId: number, from: Date, to: Date, tx?: Executor) {
+    const rows = await this.db(tx)
+      .selectFrom('slots')
+      .select('slots.id')
+      .where('teacher_id', '=', teacherId)
+      .where('status', '=', 'free')
+      .where('start_at', '>=', from)
+      .where('start_at', '<', to)
+      .where((eb) =>
+        eb.exists(
+          eb.selectFrom('external_busy')
+            .select('external_busy.id')
+            .whereRef('external_busy.teacher_id', '=', 'slots.teacher_id')
+            .where(sql<boolean>`external_busy.period && slots.period`),
+        ))
+      .execute();
+
+    return new Set(rows.map((r) => r.id));
+  }
+
+  /** Заняття викладача для стрічки календаря: лише зайняті години. */
+  async forCalendar(teacherId: number, from: Date, to: Date, tx?: Executor) {
+    return this.db(tx)
+      .selectFrom('slots')
+      .leftJoin('students', 'students.id', 'slots.student_id')
+      .select([
+        'slots.id as id', 'slots.start_at as start_at', 'slots.end_at as end_at',
+        'slots.status as status', 'students.name as student_name',
+      ])
+      .where('slots.teacher_id', '=', teacherId)
+      .where('slots.status', 'in', ['pre_booked', 'booked', 'done', 'cancelled_late'])
+      .where('slots.start_at', '>=', from)
+      .where('slots.start_at', '<', to)
+      .orderBy('slots.start_at')
+      .execute();
+  }
+
   /** Неоплачені слоти студента в ХРОНОЛОГІЧНОМУ порядку — саме так їх конвертує білінг. */
   async pendingPayment(studentId: number, tx?: Executor) {
     return this.db(tx)
@@ -255,6 +332,44 @@ export class SlotsRepository {
       .returning(['id'])
       .execute();
     return rows.length;
+  }
+
+  /**
+   * Заняття, до початку яких лишилось приблизно добу.
+   *
+   * Беруться `booked` і `pre_booked`: нагадати треба і про оплачене заняття
+   * (щоб людина не забула прийти), і про неоплачене (щоб устигла заплатити).
+   * `done` і `cancelled_late` не беруться — нагадувати про те, що вже
+   * скінчилось, нема сенсу.
+   */
+  async upcomingForReminder(from: Date, to: Date, tx?: Executor) {
+    return this.db(tx)
+      .selectFrom('slots')
+      .select(['id', 'student_id', 'start_at', 'status', 'price_minor'])
+      .where('status', 'in', ['booked', 'pre_booked'])
+      .where('student_id', 'is not', null)
+      .where('start_at', '>=', from)
+      .where('start_at', '<=', to)
+      .orderBy('start_at')
+      .execute();
+  }
+
+  /**
+   * Закріплення, у яких за добу спливає строк оплати.
+   *
+   * Вікно накладається на `hold_expires_at`, а не на початок заняття: саме
+   * цей момент звільняє місце, і саме до нього студентові треба встигнути.
+   */
+  async paymentDueForReminder(from: Date, to: Date, tx?: Executor) {
+    return this.db(tx)
+      .selectFrom('slots')
+      .select(['id', 'student_id', 'start_at', 'hold_expires_at', 'price_minor'])
+      .where('status', '=', 'pre_booked')
+      .where('student_id', 'is not', null)
+      .where('hold_expires_at', '>=', from)
+      .where('hold_expires_at', '<=', to)
+      .orderBy('hold_expires_at')
+      .execute();
   }
 
   /** Закрити проведені заняття. Фонова задача з лабораторної 2. */

@@ -342,10 +342,17 @@ export class SlotsRepository {
    * `done` і `cancelled_late` не беруться — нагадувати про те, що вже
    * скінчилось, нема сенсу.
    */
-  async upcomingForReminder(from: Date, to: Date, tx?: Executor) {
+  async upcomingForReminder(
+    teacherIds: readonly number[],
+    from: Date,
+    to: Date,
+    tx?: Executor,
+  ) {
+    if (teacherIds.length === 0) return [];
     return this.db(tx)
       .selectFrom('slots')
       .select(['id', 'student_id', 'start_at', 'status', 'price_minor'])
+      .where('teacher_id', 'in', [...teacherIds])
       .where('status', 'in', ['booked', 'pre_booked'])
       .where('student_id', 'is not', null)
       .where('start_at', '>=', from)
@@ -360,10 +367,17 @@ export class SlotsRepository {
    * Вікно накладається на `hold_expires_at`, а не на початок заняття: саме
    * цей момент звільняє місце, і саме до нього студентові треба встигнути.
    */
-  async paymentDueForReminder(from: Date, to: Date, tx?: Executor) {
+  async paymentDueForReminder(
+    teacherIds: readonly number[],
+    from: Date,
+    to: Date,
+    tx?: Executor,
+  ) {
+    if (teacherIds.length === 0) return [];
     return this.db(tx)
       .selectFrom('slots')
       .select(['id', 'student_id', 'start_at', 'hold_expires_at', 'price_minor'])
+      .where('teacher_id', 'in', [...teacherIds])
       .where('status', '=', 'pre_booked')
       .where('student_id', 'is not', null)
       .where('hold_expires_at', '>=', from)

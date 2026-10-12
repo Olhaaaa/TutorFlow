@@ -19,6 +19,20 @@ export class TeachersRepository {
     );
   }
 
+  /**
+   * Строк нагадування кожного викладача.
+   *
+   * Віддається списком, бо прохід нагадувань рахує вікно не одне, а по одному
+   * на кожне ВІДМІННЕ значення строку: формула вікна лишається в ядрі, а не
+   * розтікається у SQL із `make_interval` по колонці.
+   */
+  reminderLeads(tx?: Executor) {
+    return (tx ?? this.root)
+      .selectFrom('teachers')
+      .select(['id', 'reminder_lead_hours'])
+      .execute();
+  }
+
   /* ---------- секретна адреса календаря ---------- */
 
   /**

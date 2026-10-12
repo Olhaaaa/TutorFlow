@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { reminderWindow } from '@tutorflow/core';
 import { EventBus } from '../events/event-bus.js';
 import { SlotsRepository } from './slots.repository.js';
+import { TeachersRepository } from './teachers.repository.js';
 
 /** Скільком подіям про що нагадати цей прохід знайшов. */
 export interface RemindersResult {
@@ -29,6 +30,7 @@ export class RemindersService {
   constructor(
     private readonly slots: SlotsRepository,
     private readonly events: EventBus,
+    private readonly teachers: TeachersRepository,
   ) {}
 
   /**
@@ -39,12 +41,31 @@ export class RemindersService {
    *   випаде з вікна назавжди.
    */
   async publish(now = new Date(), lookbackMin = 15): Promise<RemindersResult> {
-    const { from, to } = reminderWindow(now, lookbackMin);
+    /*
+     * Строк нагадування в кожного викладача свій, тому вікно не одне.
+     * Викладачі групуються за ВІДМІННИМИ значеннями строку: на платформі їх
+     * одиниці, а формула вікна лишається в ядрі — замість `make_interval` по
+     * колонці всередині SQL, де її ніхто не перевірить тестом.
+     */
+    const byLead = new Map<number, number[]>();
+    for (const t of await this.teachers.reminderLeads()) {
+      const group = byLead.get(t.reminder_lead_hours);
+      if (group) group.push(t.id);
+      else byLead.set(t.reminder_lead_hours, [t.id]);
+    }
 
-    const [lessons, payments] = await Promise.all([
-      this.slots.upcomingForReminder(from, to),
-      this.slots.paymentDueForReminder(from, to),
-    ]);
+    const lessons: Awaited<ReturnType<SlotsRepository['upcomingForReminder']>> = [];
+    const payments: Awaited<ReturnType<SlotsRepository['paymentDueForReminder']>> = [];
+
+    for (const [leadHours, teacherIds] of byLead) {
+      const { from, to } = reminderWindow(now, lookbackMin, leadHours);
+      const [l, p] = await Promise.all([
+        this.slots.upcomingForReminder(teacherIds, from, to),
+        this.slots.paymentDueForReminder(teacherIds, from, to),
+      ]);
+      lessons.push(...l);
+      payments.push(...p);
+    }
 
     for (const slot of lessons) {
       await this.events.publish({

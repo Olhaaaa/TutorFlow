@@ -137,9 +137,11 @@ export interface ReminderWindow {
 }
 
 /**
- * За скільки годин до події нагадувати. Доба — бо нагадування має сенс лише
- * тоді, коли на нього ще можна зреагувати: скасувати вчасно (правило 24 години)
- * або заплатити.
+ * Строк нагадування за замовчуванням. Доба — бо нагадування має сенс лише
+ * тоді, коли на нього ще можна зреагувати: скасувати вчасно або заплатити.
+ *
+ * Це саме ЗАМОВЧУВАННЯ: кожен викладач має власний `reminderLeadHours`, бо
+ * узгоджений він мусить бути з його ж `cancelHours`.
  */
 export const REMINDER_LEAD_HOURS = 24;
 
@@ -155,15 +157,64 @@ export const REMINDER_LEAD_HOURS = 24;
  * потрібен, бо прохід не точний: якщо воркер лежав десять хвилин, подія без
  * запасу випала б із вікна назавжди.
  *
+ * `leadHours` — строк конкретного викладача. Тому вікно рахується не одне на
+ * прохід, а по одному на кожне відмінне значення строку.
+ *
  * Ціна запасу — та сама подія потрапляє в кілька проходів. Це не проблема
  * рівно тому, що споживач ідемпотентний: `notifications.dedup_key` не дасть
  * створити друге нагадування. Тобто продюсер свідомо at-least-once, і це
  * узгоджене з рештою системи рішення, а не недогляд.
  */
-export function reminderWindow(now: Date, lookbackMin: number): ReminderWindow {
-  const target = now.getTime() + REMINDER_LEAD_HOURS * 3_600_000;
+export function reminderWindow(
+  now: Date,
+  lookbackMin: number,
+  leadHours: number = REMINDER_LEAD_HOURS,
+): ReminderWindow {
+  const target = now.getTime() + leadHours * 3_600_000;
   return {
     from: new Date(target - lookbackMin * 60_000),
     to: new Date(target),
   };
+}
+
+export type RescheduleRejection =
+  | 'nothing_to_move'
+  | 'too_late'
+  | 'target_not_free'
+  | 'target_in_the_past';
+
+/**
+ * Чи можна перенести заняття на інший слот.
+ *
+ * Правило не нове — воно СКЛАДЕНЕ з двох наявних, і це головне в ньому.
+ * Переносити можна те, що можна скасувати безкоштовно (`isCancellationFree`),
+ * і тільки туди, куди можна забронювати (`bookRejection`). Якби перенос мав
+ * власні умови, вони б розійшлися з бронюванням і скасуванням на першій же
+ * правці.
+ *
+ * Чому межа саме `cancelHours`: перенос за годину до заняття коштує викладачеві
+ * ровно того самого, що й скасування за годину — втраченої години, яку вже
+ * нікому не продати. Дозволити перенос там, де скасування вже платне, означало
+ * б дати безкоштовний обхід правила.
+ *
+ * `pre_booked` переноситься завжди: гроші не списані, і втрачати викладачеві
+ * нічого.
+ *
+ * @returns null якщо можна, інакше причина відмови.
+ */
+export function rescheduleRejection(
+  from: Pick<Slot, 'status' | 'startAt'>,
+  to: Pick<Slot, 'status' | 'startAt'>,
+  now: Date,
+  cancelHours: Teacher['cancelHours'],
+): RescheduleRejection | null {
+  if (from.status !== 'booked' && from.status !== 'pre_booked') return 'nothing_to_move';
+
+  const target = bookRejection(to, now);
+  if (target === 'not_free') return 'target_not_free';
+  if (target === 'in_the_past') return 'target_in_the_past';
+
+  if (from.status === 'booked' && !isCancellationFree(from, now, cancelHours)) return 'too_late';
+
+  return null;
 }

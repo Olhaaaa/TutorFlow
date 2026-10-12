@@ -18,6 +18,7 @@ import type { EventBus } from '../src/events/event-bus.js';
 import type { DomainEvent } from '../src/events/events.js';
 import { RemindersService } from '../src/scheduling/reminders.service.js';
 import { SlotsRepository } from '../src/scheduling/slots.repository.js';
+import { TeachersRepository } from '../src/scheduling/teachers.repository.js';
 import type { SlotStatusColumn } from '../src/db/schema.js';
 
 const db = createDatabase();
@@ -32,7 +33,8 @@ const bus = {
   },
 } as unknown as EventBus;
 
-const reminders = new RemindersService(slots, bus);
+const teachersRepo = new TeachersRepository(db);
+const reminders = new RemindersService(slots, bus, teachersRepo);
 
 const NOW = new Date('2027-07-01T09:00:00Z');
 const PRICE = 50_000;
@@ -199,5 +201,45 @@ describe('повторні проходи', () => {
     // notifications.dedup_key, а не памʼять проходу
     expect(published).toHaveLength(2);
     expect(published[0]).toEqual(published[1]);
+  });
+});
+
+describe('строк нагадування належить викладачеві', () => {
+  it('викладач із 48 годинами отримує нагадування за дві доби, а не за одну', async () => {
+    await db.updateTable('teachers').set({ reminder_lead_hours: 48 })
+      .where('id', '=', teacherId).execute();
+    await makeSlot('booked', hours(48));
+
+    expect((await reminders.publish(NOW, 15)).lessons).toBe(1);
+  });
+
+  it('те саме заняття за добу такому викладачеві вже не нагадують', async () => {
+    await db.updateTable('teachers').set({ reminder_lead_hours: 48 })
+      .where('id', '=', teacherId).execute();
+    await makeSlot('booked', hours(REMINDER_LEAD_HOURS));
+
+    expect((await reminders.publish(NOW, 15)).lessons).toBe(0);
+  });
+
+  it('у двох викладачів із різними строками кожен має своє вікно', async () => {
+    const other = await db.insertInto('teachers').values({
+      name: 'Інший', email: 't2@test.local', password_hash: 'x',
+      timezone: 'Europe/Kyiv', default_price_minor: PRICE, reminder_lead_hours: 48,
+    }).returning('id').executeTakeFirstOrThrow();
+    const otherStudent = await db.insertInto('students').values({
+      teacher_id: other.id, name: 'Студент 2', email: 's2@test.local',
+      password_hash: 'x', timezone: 'Europe/Kyiv',
+    }).returning('id').executeTakeFirstOrThrow();
+
+    // нашому викладачеві (24 год) — заняття за добу
+    await makeSlot('booked', hours(REMINDER_LEAD_HOURS));
+    // іншому (48 год) — за дві доби
+    await db.insertInto('slots').values({
+      teacher_id: other.id, start_at: hours(48), end_at: hours(49),
+      price_minor: PRICE, status: 'booked', student_id: otherStudent.id, paid_at: NOW,
+    }).execute();
+
+    const r = await reminders.publish(NOW, 15);
+    expect(r.lessons).toBe(2);
   });
 });

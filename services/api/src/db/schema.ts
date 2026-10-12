@@ -20,6 +20,8 @@ export interface TeachersTable {
   default_price_minor: number;
   cancel_hours: Generated<number>;
   payment_deadline_hours: Generated<number>;
+  /** За скільки годин до події нагадувати. Узгоджується з cancel_hours. */
+  reminder_lead_hours: Generated<number>;
   /** Еквайринг викладача. Три поля заповнені або всі порожні — так у базі. */
   payment_provider: PaymentProviderColumn | null;
   /** AES-256-GCM, формат `v1:iv:tag:ciphertext`. Назовні не віддається ніколи. */

@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   bookRejection, holdDeadline, isHoldExpired,
   cancelOutcome, isCancellationFree, isCompleted, teacherCancelOutcome,
-  reminderWindow, REMINDER_LEAD_HOURS,
+  reminderWindow, REMINDER_LEAD_HOURS, rescheduleRejection,
 } from '../src/rules/scheduling.js';
 
 const NOW = new Date('2026-10-14T12:00:00Z');
@@ -159,5 +159,73 @@ describe('вікно нагадувань', () => {
     const a = reminderWindow(NOW, 15);
     const b = reminderWindow(later, 15);
     expect(b.from < a.to).toBe(true);
+  });
+});
+
+describe('вікно нагадувань зі строком викладача', () => {
+  it('строк за замовчуванням — доба', () => {
+    expect(reminderWindow(NOW, 0).to).toEqual(reminderWindow(NOW, 0, 24).to);
+  });
+
+  it('48 годин зсувають вікно, а не розтягують його', () => {
+    const w = reminderWindow(NOW, 15, 48);
+    expect(w.to).toEqual(h(48));
+    expect(w.from).toEqual(new Date(h(48).getTime() - 15 * 60_000));
+  });
+
+  it('строк в одну годину теж працює', () => {
+    expect(reminderWindow(NOW, 5, 1).to).toEqual(h(1));
+  });
+});
+
+describe('перенесення заняття', () => {
+  const free = (at: Date) => ({ status: 'free' as const, startAt: at });
+
+  it('оплачене заняття за 48 годин переноситься на вільний слот', () => {
+    const from = { status: 'booked' as const, startAt: h(48) };
+    expect(rescheduleRejection(from, free(h(72)), NOW, 24)).toBeNull();
+  });
+
+  it('рівно за 24 години — ще можна, межа та сама, що в скасуванні', () => {
+    const from = { status: 'booked' as const, startAt: h(24) };
+    expect(rescheduleRejection(from, free(h(72)), NOW, 24)).toBeNull();
+  });
+
+  it('за дві години — ні: це безкоштовний обхід правила скасування', () => {
+    const from = { status: 'booked' as const, startAt: h(2) };
+    expect(rescheduleRejection(from, free(h(72)), NOW, 24)).toBe('too_late');
+  });
+
+  it('неоплачене закріплення переноситься навіть за годину: гроші не списані', () => {
+    const from = { status: 'pre_booked' as const, startAt: h(1) };
+    expect(rescheduleRejection(from, free(h(72)), NOW, 24)).toBeNull();
+  });
+
+  it('у зайнятий слот перенести не можна', () => {
+    const from = { status: 'booked' as const, startAt: h(48) };
+    for (const status of ['booked', 'pre_booked', 'done'] as const) {
+      expect(rescheduleRejection(from, { status, startAt: h(72) }, NOW, 24))
+        .toBe('target_not_free');
+    }
+  });
+
+  it('у минуле перенести не можна', () => {
+    const from = { status: 'booked' as const, startAt: h(48) };
+    expect(rescheduleRejection(from, free(h(-1)), NOW, 24)).toBe('target_in_the_past');
+  });
+
+  it('переносити нічого, якщо слот вільний або вже закритий', () => {
+    for (const status of ['free', 'done', 'cancelled_late'] as const) {
+      expect(rescheduleRejection({ status, startAt: h(48) }, free(h(72)), NOW, 24))
+        .toBe('nothing_to_move');
+    }
+  });
+
+  it('стан цілі перевіряється РАНІШЕ за строк: інакше повідомлення збрехало б', () => {
+    // заняття вже пізно переносити, але й ціль зайнята — причина має бути
+    // про ціль, бо вона не зміниться від очікування
+    const from = { status: 'booked' as const, startAt: h(2) };
+    expect(rescheduleRejection(from, { status: 'booked', startAt: h(72) }, NOW, 24))
+      .toBe('target_not_free');
   });
 });

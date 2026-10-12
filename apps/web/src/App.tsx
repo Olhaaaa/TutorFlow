@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { GraduationCap, LogOut } from 'lucide-react';
+import { ArrowRightLeft, GraduationCap, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ApiError,
@@ -11,6 +11,7 @@ import {
   type Session,
 } from '@/api/client';
 import type { SlotView } from '@/api/types';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BalanceCard } from '@/features/balance/BalanceCard';
@@ -45,6 +46,9 @@ export function App() {
   const [balance, setBalance] = useState<Balance | null>(null);
   const [loading, setLoading] = useState(false);
   const [actingId, setActingId] = useState<number | null>(null);
+  // Заняття, яке студент переносить. Поки воно задане, календар показує не
+  // «забронювати», а «сюди»: у режимі переносу питання одне — куди.
+  const [movingId, setMovingId] = useState<number | null>(null);
   const hash = useHash();
   // Сторінка станів — службова: специфікація інтерфейсу й скріншот для звіту.
   // Посилання на неї в інтерфейсі немає ні в кого, вона відкривається рівно за
@@ -124,7 +128,17 @@ export function App() {
     if (!session) return;
     setActingId(slot.id);
     try {
-      if (slot.state === 'free') {
+      if (movingId !== null) {
+        // У режимі переносу клік по вільному слоту означає «сюди», а не
+        // «забронювати ще одне».
+        const r = await api.reschedule(session.token, movingId, slot.id);
+        setMovingId(null);
+        toast.success('Заняття перенесено', {
+          description: r.paid
+            ? 'Оплата переїхала разом із заняттям'
+            : 'Місце закріплене на новий час',
+        });
+      } else if (slot.state === 'free') {
         const r = await api.book(session.token, slot.id);
         if (r.paid) toast.success('Заняття оплачене з балансу');
         else toast.success('Місце закріплене', { description: 'Лишилось оплатити заняття' });
@@ -190,17 +204,37 @@ export function App() {
               />
             )}
             <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-              <Calendar
-                anchor={anchor}
-                tz={tz}
-                now={now}
-                slots={visible}
-                loading={loading}
-                actingId={actingId}
-                onAct={act}
-                onWeekShift={(d) => setCursor((c) => addDays(c, d * 7))}
-                onToday={() => setCursor(new Date())}
-              />
+              <div className="space-y-2">
+                {movingId !== null && (
+                  <Alert>
+                    <ArrowRightLeft aria-hidden />
+                    <AlertDescription className="flex flex-wrap items-center gap-2">
+                      <span>Виберіть вільну годину, на яку перенести заняття.</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="ml-auto"
+                        onClick={() => setMovingId(null)}
+                      >
+                        скасувати перенос
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <Calendar
+                  anchor={anchor}
+                  tz={tz}
+                  now={now}
+                  slots={visible}
+                  loading={loading}
+                  actingId={actingId}
+                  onAct={act}
+                  movingId={movingId}
+                  onMove={(slot) => setMovingId(slot.id)}
+                  onWeekShift={(d) => setCursor((c) => addDays(c, d * 7))}
+                  onToday={() => setCursor(new Date())}
+                />
+              </div>
               {balance && (
                 <div className="space-y-4 xl:sticky xl:top-20">
                   <BalanceCard balance={balance} tz={tz} />

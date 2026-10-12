@@ -31,6 +31,18 @@ export interface CancelResult {
   refunded: boolean;
 }
 
+/** Віддає POST /api/slots/:id/reschedule. */
+export interface RescheduleResult {
+  /** Слот, який звільнився. */
+  from: number;
+  /** Слот, на який переїхало заняття. */
+  to: number;
+  status: 'booked' | 'pre_booked';
+  /** Чи переїхала разом із заняттям оплата. */
+  paid: boolean;
+  payBy: string | null;
+}
+
 /* ---------- кабінет викладача ---------- */
 
 /** Сирий статус заняття в базі. Його бачить лише викладач. */

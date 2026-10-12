@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { displayOf } from './slot-state';
 import { slotBox } from './slot-variants';
-import { dateTimeLabel, hhmm, money } from './time';
+import { dateTimeLabel, hhmm, isPast, money } from './time';
 
 interface Props extends Pick<VariantProps<typeof slotBox>, 'shape'> {
   slot: SlotView;
@@ -16,9 +16,18 @@ interface Props extends Pick<VariantProps<typeof slotBox>, 'shape'> {
   /** true, доки запрос по цьому слоту в дорозі */
   acting?: boolean;
   onAct?: (slot: SlotView) => void;
+  /** Увімкнений режим переносу: вільні слоти стають цілями, а не бронюванням. */
+  moving?: boolean;
+  /** Саме це заняття зараз переносять. */
+  isSource?: boolean;
+  /** Почати перенос цього заняття. */
+  onMove?: (slot: SlotView) => void;
 }
 
-export function Slot({ slot, tz, now, shape = 'cell', acting = false, onAct }: Props) {
+export function Slot({
+  slot, tz, now, shape = 'cell', acting = false, onAct,
+  moving = false, isSource = false, onMove,
+}: Props) {
   const s = displayOf(slot, now);
   const { Icon } = s;
   const row = shape === 'row';
@@ -26,6 +35,62 @@ export function Slot({ slot, tz, now, shape = 'cell', acting = false, onAct }: P
   // На суцільній сосновій заливці звичайна outline-кнопка нечитабельна:
   // вона мусить брати колір від самого слота.
   const onSolid = s.variant === 'paid';
+
+  /*
+   * У режимі переносу інтерфейс мусить говорити одне: куди. Тому вільний слот
+   * пропонує «сюди» замість «Забронювати», а кнопки скасування в цей час немає
+   * взагалі — інакше один клік мимо означав би скасоване заняття.
+   */
+  if (moving) {
+    const target = s.action === 'book' && onAct && (
+      <Button
+        size={row ? 'sm' : 'xs'}
+        variant="outline"
+        className={cn(row ? '' : 'mt-1 w-full', 'border-primary/50 bg-transparent text-primary hover:bg-primary/10')}
+        disabled={acting}
+        onClick={() => onAct(slot)}
+        aria-label={`Перенести на ${time}`}
+      >
+        {acting && <Loader2 className="animate-spin" aria-hidden />}
+        сюди
+      </Button>
+    );
+
+    return (
+      <div
+        className={cn(
+          slotBox({ variant: s.variant, shape }),
+          isSource && 'ring-2 ring-primary ring-offset-1',
+        )}
+        title={isSource ? 'Це заняття переносимо' : s.hint}
+      >
+        <div className="flex items-center gap-1">
+          <Icon className="size-3.5 shrink-0 opacity-80" aria-hidden />
+          <span className="font-mono text-sm font-medium tabular-nums">{time}</span>
+        </div>
+        <span className="line-clamp-2 text-xs leading-tight">
+          {isSource ? 'переносимо' : s.label}
+        </span>
+        {target}
+      </div>
+    );
+  }
+
+  const move = s.action === 'cancel' && onMove && !isPast(slot.startAt, now) && (
+    <Button
+      size={row ? 'sm' : 'xs'}
+      variant="ghost"
+      className={cn(
+        row ? '' : 'w-full',
+        onSolid && 'text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
+      )}
+      disabled={acting}
+      onClick={() => onMove(slot)}
+      aria-label={`Перенести заняття ${time}`}
+    >
+      перенести
+    </Button>
+  );
 
   const action = s.action && onAct && (
     <Button
@@ -64,6 +129,7 @@ export function Slot({ slot, tz, now, shape = 'cell', acting = false, onAct }: P
           )}
         </div>
         <span className="font-mono text-sm tabular-nums opacity-80">{money(slot.priceMinor)}</span>
+        {move}
         {action}
       </div>
     );
@@ -82,6 +148,7 @@ export function Slot({ slot, tz, now, shape = 'cell', acting = false, onAct }: P
         </span>
       )}
       {action}
+      {move}
     </div>
   );
 }

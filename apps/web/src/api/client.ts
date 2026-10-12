@@ -1,8 +1,8 @@
 import type {
   AuditResult, AvailabilityRule, BookResult, CancelResult, GenerateResult,
   Enrollment, MaintenanceResult, PaymentConnection, PaymentView, SlotView,
-  CalendarLink, ExternalBusy, Student, TeacherCancelResult, TeacherSlotView,
-  TelegramState, TopupResult,
+  CalendarLink, ExternalBusy, RescheduleResult, Student, TeacherCancelResult,
+  TeacherSlotView, TelegramState, TopupResult,
 } from './types.js';
 
 /**
@@ -113,6 +113,16 @@ export const api = {
 
   cancel: (t: string, slotId: number) =>
     request<CancelResult>(`/slots/${slotId}/cancel`, t, { method: 'POST' }),
+
+  /**
+   * Перенос — ОДИН запрос, а не скасування плюс бронювання: між двома
+   * викликами місце встигають забрати.
+   */
+  reschedule: (t: string, slotId: number, toSlotId: number) =>
+    request<RescheduleResult>(`/slots/${slotId}/reschedule`, t, {
+      method: 'POST',
+      body: JSON.stringify({ toSlotId }),
+    }),
 
   balance: (t: string) => request<Balance>('/balance', t),
 

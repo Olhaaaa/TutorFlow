@@ -30,6 +30,9 @@ interface Props {
   loading: boolean;
   actingId: number | null;
   onAct: (slot: SlotView) => void;
+  /** Заняття, яке зараз переносять. null — звичайний режим. */
+  movingId?: number | null;
+  onMove?: (slot: SlotView) => void;
   onWeekShift: (delta: number) => void;
   onToday: () => void;
 }
@@ -115,7 +118,9 @@ function Loading() {
 
 /* ---------- широкий екран: сітка тижня ---------- */
 
-function WeekGridView({ days, slots, tz, now, actingId, onAct }: Props & { days: Date[] }) {
+function WeekGridView({
+  days, slots, tz, now, actingId, onAct, movingId, onMove,
+}: Props & { days: Date[] }) {
   return (
     <WeekGrid
       days={days}
@@ -126,7 +131,16 @@ function WeekGridView({ days, slots, tz, now, actingId, onAct }: Props & { days:
       startAt={(s) => s.startAt}
       focus={(s) => displayOf(s, now).action === 'book'}
       render={(s) => (
-        <Slot slot={s} tz={tz} now={now} acting={actingId === s.id} onAct={onAct} />
+        <Slot
+          slot={s}
+          tz={tz}
+          now={now}
+          acting={actingId === s.id}
+          onAct={onAct}
+          moving={movingId != null}
+          isSource={movingId === s.id}
+          onMove={onMove}
+        />
       )}
     />
   );
@@ -134,7 +148,9 @@ function WeekGridView({ days, slots, tz, now, actingId, onAct }: Props & { days:
 
 /* ---------- вузький екран: список одного дня ---------- */
 
-function DayList({ days, slots, tz, now, actingId, onAct }: Props & { days: Date[] }) {
+function DayList({
+  days, slots, tz, now, actingId, onAct, movingId, onMove,
+}: Props & { days: Date[] }) {
   const today = dayKey(now, tz);
   const todayIndex = days.findIndex((d) => dayKey(d, tz) === today);
   const [picked, setPicked] = useState(() => dayKey(days[Math.max(0, todayIndex)]!, tz));
@@ -185,6 +201,9 @@ function DayList({ days, slots, tz, now, actingId, onAct }: Props & { days: Date
                   shape="row"
                   acting={actingId === s.id}
                   onAct={onAct}
+                  moving={movingId != null}
+                  isSource={movingId === s.id}
+                  onMove={onMove}
                 />
               ))
             )}

@@ -13,6 +13,7 @@ import { createDatabase } from '../src/db/database.module.js';
 import { ChargeAdapter } from '../src/billing/charge.adapter.js';
 import { StudentsRepository } from '../src/billing/students.repository.js';
 import { TransactionsRepository } from '../src/billing/transactions.repository.js';
+import { EventBus } from '../src/events/event-bus.js';
 import { AvailabilityRepository } from '../src/scheduling/availability.repository.js';
 import { SchedulingService } from '../src/scheduling/scheduling.service.js';
 import { SlotsRepository } from '../src/scheduling/slots.repository.js';
@@ -26,7 +27,10 @@ const transactions = new TransactionsRepository(db);
 const teachers = new TeachersRepository(db);
 const availability = new AvailabilityRepository(db);
 const charge = new ChargeAdapter(students, transactions);
-const scheduling = new SchedulingService(db, slots, teachers, availability, charge);
+// Шина без REDIS_URL вимкнена, тому publish — тиха заглушка: тест перевіряє
+// скасування й повернення коштів, а не доставку подій.
+const events = new EventBus();
+const scheduling = new SchedulingService(db, slots, teachers, availability, charge, events);
 
 const NOW = new Date('2027-07-01T09:00:00Z');
 const START = new Date('2027-07-10T13:00:00Z');

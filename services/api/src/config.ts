@@ -26,6 +26,15 @@ function required(name: string): string {
 }
 
 /**
+ * Прапорець у оточенні. `true`, `1` і `yes` означають так, усе інше — ні.
+ * Порожнє значення теж «ні»: у Compose `${FLAG:-}` передає порожній рядок.
+ */
+function flag(name: string): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
+/**
  * Необовʼязкова змінна. ПОРОЖНІЙ рядок означає «не задано», і це не
  * дріб'язок: у Compose запис `TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}`
  * передає в контейнер саму змінну з порожнім значенням, а не відсутність
@@ -78,6 +87,15 @@ export const config = {
    * відповідає 503. Окремий від JWT_SECRET навмисно: різна ціна витоку.
    */
   paymentTokenKey: optional('PAYMENT_TOKEN_KEY'),
+
+  /**
+   * Чи робить переходи станів сам процес API.
+   *
+   * Потрібно там, де воркера немає — наприклад на безкоштовному тарифі, який
+   * дає один веб-сервіс. У компоузі лаби 2 прапорець не задається: переходи
+   * там робить воркер. Див. maintenance/maintenance.timer.ts.
+   */
+  maintenanceInApi: flag('MAINTENANCE_IN_API'),
 
   /**
    * Які роботи виконує цей процес воркера. Порожнє значення — усі.

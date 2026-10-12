@@ -5,6 +5,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentStudent, CurrentTeacher } from '../auth/current-user.decorator.js';
 import {
   AvailabilityRuleDto, CalendarQueryDto, EnrollmentDto, ExternalBusyDto, GenerateDto,
+  RescheduleDto,
 } from './dto.js';
 import { SchedulingService, type StudentContext } from './scheduling.service.js';
 
@@ -50,6 +51,25 @@ export class SchedulingController {
   @ApiResponse({ status: 403, description: 'це не ваше заняття' })
   cancel(@Param('id', ParseIntPipe) id: number, @CurrentStudent() student: StudentContext) {
     return this.scheduling.cancel(id, student);
+  }
+
+  @Post('slots/:id/reschedule')
+  @ApiOperation({
+    summary: 'Перенести заняття на інший слот',
+    description:
+      'Одна операція, а не скасування плюс бронювання: між двома викликами '
+      + 'місце встигають забрати. Межа та сама, що в безкоштовному скасуванні — '
+      + 'інакше перенос був би обходом правила cancelHours. Оплата переїжджає '
+      + 'разом із заняттям: refund за старий слот і списання за новий.',
+  })
+  @ApiResponse({ status: 400, description: 'надто пізно, переносити нічого або слот у минулому' })
+  @ApiResponse({ status: 409, description: 'слот зайнятий, щойно забрали або викладач зайнятий' })
+  reschedule(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RescheduleDto,
+    @CurrentStudent() student: StudentContext,
+  ) {
+    return this.scheduling.reschedule(id, dto.toSlotId, student);
   }
 
   @Get('teacher/slots')

@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   bookRejection, cancelOutcome, holdDeadline, LessonAlreadyStartedError, minor,
-  NothingToCancelError, slotsCoveredBy, teacherCancelOutcome,
+  NothingToCancelError, rescheduleRejection, slotsCoveredBy, teacherCancelOutcome,
   type TeacherCancelOutcome,
 } from '@tutorflow/core';
 import { config } from '../config.js';
@@ -84,6 +84,101 @@ export class SchedulingService {
           ? new Date(r.hold_expires_at).toISOString()
           : null,
     }));
+  }
+
+  /**
+   * Перенесення заняття студентом на інший вільний слот.
+   *
+   * Чому це ОДНА операція, а не «скасувати й забронювати»: між двома
+   * викликами місце встигають забрати, і студент лишається без заняття
+   * взагалі. Тут обидві зміни слотів і обидві проводки — в одній транзакції,
+   * тому або перенос відбувся, або не змінилось нічого.
+   *
+   * Гроші рухаються парою `refund` + `lesson_charge`, а не лишаються на
+   * старому слоті. Сума та сама, баланс не змінюється — але журнал лишається
+   * правдивим: за кожним заняттям видно власне списання, а не посилання на
+   * слот, якого студент уже не відвідає.
+   */
+  async reschedule(slotId: number, toSlotId: number, student: StudentContext, now = new Date()) {
+    if (slotId === toSlotId) throw new BadRequestException('це той самий слот');
+
+    const [from, to] = await Promise.all([
+      this.slots.byId(slotId),
+      this.slots.byId(toSlotId),
+    ]);
+
+    if (!from || from.teacher_id !== student.teacherId) {
+      throw new NotFoundException('заняття не знайдено');
+    }
+    if (!to || to.teacher_id !== student.teacherId) {
+      throw new NotFoundException('слот не знайдено');
+    }
+    // Порядок перевірок важливий для ПОВІДОМЛЕННЯ. Вільний слот не належить
+    // нікому, тому «це не ваше заняття» про нього збрехало б: насправді
+    // переносити нічого. Такий випадок трапляється щоразу, коли повторюють
+    // запрос після успішного переносу.
+    if (from.student_id === null) throw new BadRequestException('переносити нічого');
+    if (from.student_id !== student.id) throw new ForbiddenException('це не ваше заняття');
+
+    const teacher = await this.teachers.byId(from.teacher_id);
+    if (!teacher) throw new NotFoundException('викладача не знайдено');
+
+    const rejection = rescheduleRejection(
+      { status: from.status, startAt: new Date(from.start_at) },
+      { status: to.status, startAt: new Date(to.start_at) },
+      now,
+      teacher.cancel_hours,
+    );
+    if (rejection === 'nothing_to_move') throw new BadRequestException('переносити нічого');
+    if (rejection === 'target_not_free') throw new ConflictException('цей слот уже зайнятий');
+    if (rejection === 'target_in_the_past') throw new BadRequestException('слот у минулому');
+    if (rejection === 'too_late') {
+      throw new BadRequestException(
+        `перенести можна не пізніше ніж за ${teacher.cancel_hours} годин до заняття`,
+      );
+    }
+
+    // Та сама перевірка доступності, що й у календарі: година, у яку викладач
+    // зайнятий поза нашим розкладом, не стає вільною від того, що на неї
+    // переносять, а не бронюють.
+    const blocked = await this.slots.blockedByExternal(
+      from.teacher_id, new Date(to.start_at), new Date(to.end_at),
+    );
+    if (blocked.has(to.id)) throw new ConflictException('викладач у цей час зайнятий');
+
+    const wasPaid = from.status === 'booked';
+
+    return this.db.transaction().execute(async (tx) => {
+      const released = await this.slots.transition(slotId, from.status, 'free', tx);
+      if (!released) throw new ConflictException('стан заняття щойно змінився');
+
+      const claimed = wasPaid
+        ? await this.slots.claimFree(toSlotId, student.id, { status: 'booked', paidAt: now }, tx)
+        : await this.slots.claimFree(
+            toSlotId, student.id,
+            {
+              status: 'pre_booked',
+              // Дедлайн оплати рахується від НОВОГО початку: перенос на
+              // пізніший час дає більше часу заплатити, і це правильно.
+              holdExpiresAt: holdDeadline(new Date(to.start_at), teacher.payment_deadline_hours),
+            },
+            tx,
+          );
+      if (!claimed) throw new ConflictException('слот щойно забрали');
+
+      if (wasPaid) {
+        await this.charge.refundForLesson(tx, student.id, slotId, from.price_minor);
+        await this.charge.chargeForLesson(tx, student.id, toSlotId, to.price_minor);
+      }
+
+      return {
+        from: slotId,
+        to: claimed.id,
+        status: claimed.status,
+        paid: wasPaid,
+        payBy: claimed.hold_expires_at ? new Date(claimed.hold_expires_at).toISOString() : null,
+      };
+    });
   }
 
   /* ---------- зайнятість поза розкладом і стрічка календаря ---------- */

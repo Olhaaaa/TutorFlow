@@ -46,6 +46,12 @@ export class EnrollmentDto {
   startTime!: string;
 }
 
+export class RescheduleDto {
+  @ApiProperty({ example: 95, description: 'вільний слот, на який переносимо' })
+  @Type(() => Number) @IsInt() @Min(1)
+  toSlotId!: number;
+}
+
 export class ExternalBusyDto {
   @ApiProperty({ example: '2026-10-20T09:00:00Z', description: 'початок, ISO 8601 в UTC' })
   @IsISO8601()

@@ -19,6 +19,52 @@ export class TeachersRepository {
     );
   }
 
+  /* ---------- секретна адреса календаря ---------- */
+
+  /**
+   * Токен стрічки. Створюється при першому зверненні.
+   *
+   * Умова `calendar_token is null` всередині UPDATE, а не перевірка в коді:
+   * два одночасні відкриття екрана інакше створили б два токени, і той, що
+   * викладач уже вставив у календар, перестав би працювати.
+   */
+  async ensureCalendarToken(id: number, token: string, tx?: Executor) {
+    await (tx ?? this.root)
+      .updateTable('teachers')
+      .set({ calendar_token: token })
+      .where('id', '=', id)
+      .where('calendar_token', 'is', null)
+      .execute();
+
+    const row = await (tx ?? this.root)
+      .selectFrom('teachers')
+      .select(['id', 'name', 'timezone', 'calendar_token'])
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  /** Хто власник цієї стрічки. Єдиний спосіб автентифікації для .ics. */
+  async byCalendarToken(token: string, tx?: Executor) {
+    const row = await (tx ?? this.root)
+      .selectFrom('teachers')
+      .select(['id', 'name', 'timezone'])
+      .where('calendar_token', '=', token)
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  /** Відкликати стрічку: стара адреса перестає працювати негайно. */
+  async clearCalendarToken(id: number, tx?: Executor) {
+    await (tx ?? this.root)
+      .updateTable('teachers')
+      .set({ calendar_token: null })
+      .where('id', '=', id)
+      .execute();
+  }
+
   /** Платіжні реквізити викладача. Шифротекст назовні з сервісу не виходить. */
   async paymentCredentials(id: number, tx?: Executor) {
     const row = await (tx ?? this.root)

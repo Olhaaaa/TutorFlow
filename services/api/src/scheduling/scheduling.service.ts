@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   BadRequestException, ConflictException, Inject, Injectable,
   NotFoundException, ForbiddenException,
@@ -7,9 +8,12 @@ import {
   NothingToCancelError, slotsCoveredBy, teacherCancelOutcome,
   type TeacherCancelOutcome,
 } from '@tutorflow/core';
+import { config } from '../config.js';
 import { KYSELY, type Database } from '../db/database.module.js';
 import { EventBus } from '../events/event-bus.js';
 import { AvailabilityRepository } from './availability.repository.js';
+import { ExternalBusyRepository } from './external-busy.repository.js';
+import { buildCalendar, type CalendarEvent } from './ics.js';
 import { CHARGE_PORT, type ChargePort } from './ports.js';
 import { SlotsRepository, type Executor } from './slots.repository.js';
 import { TeachersRepository } from './teachers.repository.js';
@@ -30,6 +34,7 @@ export class SchedulingService {
     private readonly availability: AvailabilityRepository,
     @Inject(CHARGE_PORT) private readonly charge: ChargePort,
     private readonly events: EventBus,
+    private readonly externalBusy: ExternalBusyRepository,
   ) {}
 
   /** Розклад очима викладача: сирий статус і хто записаний. */
@@ -46,24 +51,128 @@ export class SchedulingService {
     }));
   }
 
+  /**
+   * Календар очима студента.
+   *
+   * Вільний слот, що накладається на зайнятість викладача ПОЗА нашим
+   * розкладом, показується як `busy`, а не ховається: слот, який зник із
+   * сітки без причини, читається як поломка. Саме тут і проходить межа
+   * інтеграції з чужим календарем — одна перевірка, а не правка в кожному
+   * місці, де хтось порівнює час.
+   */
   async calendar(
     teacherId: number,
     from: Date,
     to: Date,
     viewerStudentId: number | null,
   ): Promise<SlotView[]> {
-    const rows = await this.slots.inRange(teacherId, from, to);
+    const [rows, blocked] = await Promise.all([
+      this.slots.inRange(teacherId, from, to),
+      this.slots.blockedByExternal(teacherId, from, to),
+    ]);
+
     return rows.map((r) => ({
       id: r.id,
       startAt: new Date(r.start_at).toISOString(),
       endAt: new Date(r.end_at).toISOString(),
       priceMinor: r.price_minor,
-      state: toViewState(r.status, r.student_id, viewerStudentId),
+      state: blocked.has(r.id)
+        ? 'busy'
+        : toViewState(r.status, r.student_id, viewerStudentId),
       payBy:
         r.student_id === viewerStudentId && r.hold_expires_at
           ? new Date(r.hold_expires_at).toISOString()
           : null,
     }));
+  }
+
+  /* ---------- зайнятість поза розкладом і стрічка календаря ---------- */
+
+  listExternalBusy(teacherId: number, from: Date, to: Date) {
+    return this.externalBusy.list(teacherId, from, to);
+  }
+
+  /**
+   * Додати інтервал зайнятості. Наявні заняття НЕ скасовуються: вирішувати,
+   * що робити з уже записаним студентом, має людина, а не фонова перевірка.
+   */
+  async addExternalBusy(
+    teacherId: number,
+    busy: { startAt: Date; endAt: Date; title?: string | null },
+  ) {
+    if (busy.endAt.getTime() <= busy.startAt.getTime()) {
+      throw new BadRequestException('кінець інтервалу мусить бути після початку');
+    }
+    return this.externalBusy.upsert(teacherId, busy);
+  }
+
+  async removeExternalBusy(teacherId: number, id: number) {
+    const row = await this.externalBusy.remove(id, teacherId);
+    if (!row) throw new NotFoundException('інтервал не знайдено');
+    return { id: row.id };
+  }
+
+  /** Вільні години з урахуванням зовнішньої зайнятості — та сама одна функція. */
+  async availableSlots(teacherId: number, from: Date, to: Date) {
+    const rows = await this.slots.availableSlots(teacherId, from, to);
+    return rows.map((r) => ({
+      id: r.id,
+      startAt: new Date(r.start_at).toISOString(),
+      endAt: new Date(r.end_at).toISOString(),
+      priceMinor: r.price_minor,
+    }));
+  }
+
+  /**
+   * Адреса стрічки. Токен створюється при першому зверненні й більше не
+   * змінюється — інакше та адреса, яку викладач уже вставив у календар,
+   * перестала б працювати після кожного відкриття екрана.
+   *
+   * Повна адреса збирається з `PUBLIC_BASE_URL`: календарю потрібен
+   * абсолютний URL, а відносного він не зрозуміє. Без зовнішньої адреси
+   * віддається лише шлях — локально його однаково вставляти нікуди.
+   */
+  async calendarLink(teacherId: number) {
+    const row = await this.teachers.ensureCalendarToken(teacherId, randomBytes(24).toString('base64url'));
+    if (!row?.calendar_token) throw new NotFoundException('викладача не знайдено');
+
+    const path = `/api/calendar/${row.calendar_token}.ics`;
+    return {
+      path,
+      url: config.publicBaseUrl ? new URL(path, config.publicBaseUrl).toString() : null,
+    };
+  }
+
+  async revokeCalendarLink(teacherId: number) {
+    await this.teachers.clearCalendarToken(teacherId);
+    return { revoked: true };
+  }
+
+  /**
+   * Стрічка `.ics` для календаря викладача.
+   *
+   * Віддаються зайняті години, включно зі скасованими пізно: останні
+   * позначаються `CANCELLED`, і календар прибирає їх сам. Вікно обмежене —
+   * стрічку перечитують цілком, і віддавати в ній усю історію немає за чим.
+   */
+  async calendarFeed(token: string, now = new Date()) {
+    const teacher = await this.teachers.byCalendarToken(token);
+    if (!teacher) throw new NotFoundException('стрічку не знайдено');
+
+    const from = new Date(now.getTime() - 30 * 86_400_000);
+    const to = new Date(now.getTime() + 180 * 86_400_000);
+    const rows = await this.slots.forCalendar(teacher.id, from, to);
+
+    const events: CalendarEvent[] = rows.map((r) => ({
+      slotId: r.id,
+      startAt: new Date(r.start_at),
+      endAt: new Date(r.end_at),
+      summary: r.student_name ? `Заняття: ${r.student_name}` : 'Заняття',
+      description: r.status === 'pre_booked' ? 'Не оплачене' : undefined,
+      cancelled: r.status === 'cancelled_late',
+    }));
+
+    return buildCalendar(events, `Tutorflow — ${teacher.name}`, now);
   }
 
   /**

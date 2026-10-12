@@ -1,10 +1,10 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query,
+  Body, Controller, Delete, Get, Header, HttpCode, Param, ParseIntPipe, Post, Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentStudent, CurrentTeacher } from '../auth/current-user.decorator.js';
 import {
-  AvailabilityRuleDto, CalendarQueryDto, EnrollmentDto, GenerateDto,
+  AvailabilityRuleDto, CalendarQueryDto, EnrollmentDto, ExternalBusyDto, GenerateDto,
 } from './dto.js';
 import { SchedulingService, type StudentContext } from './scheduling.service.js';
 
@@ -79,6 +79,69 @@ export class SchedulingController {
     @CurrentTeacher() teacher: { id: number },
   ) {
     return this.scheduling.cancelByTeacher(id, teacher.id);
+  }
+
+  @Get('slots/available')
+  @ApiOperation({
+    summary: 'Вільні години з урахуванням зайнятості поза розкладом',
+    description:
+      'Єдина функція доступності. Слот, що накладається на зовнішню подію '
+      + 'викладача, сюди не потрапляє — і саме через це інтеграція з чужим '
+      + 'календарем не розтікається по коду.',
+  })
+  available(@Query() q: CalendarQueryDto, @CurrentStudent() student: StudentContext) {
+    return this.scheduling.availableSlots(student.teacherId, new Date(q.from), new Date(q.to));
+  }
+
+  @Get('teacher/busy')
+  @ApiOperation({
+    summary: 'Зайнятість викладача поза розкладом',
+    description: 'Інтервали, у які години недоступні для бронювання.',
+  })
+  listBusy(@Query() q: CalendarQueryDto, @CurrentTeacher() teacher: { id: number }) {
+    return this.scheduling.listExternalBusy(teacher.id, new Date(q.from), new Date(q.to));
+  }
+
+  @Post('teacher/busy')
+  @HttpCode(201)
+  @ApiOperation({
+    summary: 'Позначити себе зайнятим',
+    description:
+      'Вільні слоти в цьому інтервалі перестають бронюватись. Уже записані '
+      + 'заняття НЕ скасовуються: що з ними робити, вирішує людина.',
+  })
+  addBusy(@Body() dto: ExternalBusyDto, @CurrentTeacher() teacher: { id: number }) {
+    return this.scheduling.addExternalBusy(teacher.id, {
+      startAt: new Date(dto.startAt),
+      endAt: new Date(dto.endAt),
+      title: dto.title ?? null,
+    });
+  }
+
+  @Delete('teacher/busy/:id')
+  @ApiOperation({ summary: 'Прибрати інтервал зайнятості' })
+  removeBusy(@Param('id', ParseIntPipe) id: number, @CurrentTeacher() teacher: { id: number }) {
+    return this.scheduling.removeExternalBusy(teacher.id, id);
+  }
+
+  @Get('teacher/calendar-link')
+  @ApiOperation({
+    summary: 'Адреса стрічки .ics',
+    description:
+      'Секрет у самій адресі: календарна програма не вміє ні увійти, ні '
+      + 'віддати заголовок авторизації. Створюється при першому зверненні.',
+  })
+  calendarLink(@CurrentTeacher() teacher: { id: number }) {
+    return this.scheduling.calendarLink(teacher.id);
+  }
+
+  @Delete('teacher/calendar-link')
+  @ApiOperation({
+    summary: 'Відкликати стрічку',
+    description: 'Стара адреса перестає працювати негайно; нову можна випустити заново.',
+  })
+  revokeCalendarLink(@CurrentTeacher() teacher: { id: number }) {
+    return this.scheduling.revokeCalendarLink(teacher.id);
   }
 
   @Get('teacher/availability')

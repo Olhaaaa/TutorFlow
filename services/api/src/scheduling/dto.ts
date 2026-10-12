@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsISO8601, IsOptional, Matches, Max, Min } from 'class-validator';
+import {
+  IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CalendarQueryDto {
@@ -42,6 +44,20 @@ export class EnrollmentDto {
   @ApiProperty({ example: '16:00' })
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'очікується формат HH:MM' })
   startTime!: string;
+}
+
+export class ExternalBusyDto {
+  @ApiProperty({ example: '2026-10-20T09:00:00Z', description: 'початок, ISO 8601 в UTC' })
+  @IsISO8601()
+  startAt!: string;
+
+  @ApiProperty({ example: '2026-10-20T11:30:00Z' })
+  @IsISO8601()
+  endAt!: string;
+
+  @ApiPropertyOptional({ example: 'Лікар', description: 'для себе; студент цього не бачить' })
+  @IsOptional() @IsString() @MaxLength(200)
+  title?: string;
 }
 
 export class GenerateDto {

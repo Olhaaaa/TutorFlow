@@ -25,6 +25,8 @@ export interface TeachersTable {
   /** AES-256-GCM, формат `v1:iv:tag:ciphertext`. Назовні не віддається ніколи. */
   payment_token_encrypted: string | null;
   payments_connected_at: Timestamp | null;
+  /** Секрет у рядку адреси стрічки .ics: календарна програма не вміє входити. */
+  calendar_token: string | null;
   created_at: Generated<Timestamp>;
 }
 
@@ -131,6 +133,23 @@ export interface NotificationsTable {
   sent_at: Timestamp | null;
 }
 
+/**
+ * Зайнятість викладача поза нашим розкладом. Інтервалом, а не годиною:
+ * зовнішні події не вирівняні по нашій сітці.
+ */
+export interface ExternalBusyTable {
+  id: Generated<number>;
+  teacher_id: number;
+  start_at: Timestamp;
+  end_at: Timestamp;
+  source: Generated<'manual' | 'google' | 'ics'>;
+  external_id: string | null;
+  title: string | null;
+  /** Обчислюється базою з start_at і end_at. Вставляти не можна. */
+  period: GeneratedAlways<string>;
+  created_at: Generated<Timestamp>;
+}
+
 export interface DB {
   teachers: TeachersTable;
   students: StudentsTable;
@@ -140,4 +159,5 @@ export interface DB {
   transactions: TransactionsTable;
   payments: PaymentsTable;
   notifications: NotificationsTable;
+  external_busy: ExternalBusyTable;
 }

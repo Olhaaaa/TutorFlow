@@ -4,10 +4,18 @@
  * Запуск: pnpm --filter api seed
  * Скрипт ідемпотентний у тому сенсі, що спершу повністю очищає таблиці —
  * на робочій базі його запускати не можна, і він про це попереджає.
+ *
+ * Наповнення винесене у функцію `seed`, бо викликають його з двох місць: ця
+ * команда (одна база моноліту) і скид демо-даних лабораторної 3, де тих баз
+ * чотири. Дані в них мусять бути ТІ САМІ — з тими самими ідентифікаторами, —
+ * інакше посилання між сервісами вказували б у пустоту. Саме тому сідер
+ * починає з `truncate … restart identity`: порядок вставки фіксований, тому й
+ * ідентифікатори виходять однакові в кожній базі.
  */
+import { pathToFileURL } from 'node:url';
 import { hash } from '@node-rs/bcrypt';
 import { sql } from 'kysely';
-import { createDatabase } from './database.module.js';
+import { createDatabase, type Database } from './database.module.js';
 
 const PASSWORD = 'tutorflow';
 
@@ -18,6 +26,12 @@ async function main(): Promise<void> {
   }
 
   const db = createDatabase();
+  await seed(db);
+  await db.destroy();
+}
+
+/** Наповнити базу демо-даними. Починає з очищення, тому дані виходять однакові. */
+export async function seed(db: Database): Promise<void> {
   const pwd = await hash(PASSWORD, 10);
 
   await sql`truncate transactions, slots, enrollments, availability_rules, students, teachers
@@ -254,8 +268,15 @@ async function main(): Promise<void> {
   console.log(`\n  пароль для всіх: ${PASSWORD}\n`);
   console.log('  слоти:', counts.map((c) => `${c.status} ${c.n}`).join(', '));
   console.log('  баланси:', balances.map((b) => `${b.name} ${b.balance_minor / 100} ₴`).join(', '));
-
-  await db.destroy();
 }
 
-void main();
+/**
+ * Запускаємо, лише якщо файл викликали командою.
+ *
+ * Без цієї перевірки сам ІМПОРТ `seed` починав витирати базу: скид демо-даних
+ * лабораторної 3 імпортує функцію, а модуль при цьому виконував своє `main` і
+ * йшов у базу, заданої якої в тому процесі ще немає.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main();
+}

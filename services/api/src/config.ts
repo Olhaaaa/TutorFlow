@@ -19,7 +19,7 @@ if (process.env.NODE_ENV !== 'production' && existsSync(ENV_FILE)) {
 }
 
 /** Читання й перевірка оточення. Падати на старті краще, ніж на першому запросі. */
-function required(name: string): string {
+export function required(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`не задано змінну оточення ${name} — див. .env.example`);
   return v;
@@ -29,7 +29,7 @@ function required(name: string): string {
  * Прапорець у оточенні. `true`, `1` і `yes` означають так, усе інше — ні.
  * Порожнє значення теж «ні»: у Compose `${FLAG:-}` передає порожній рядок.
  */
-function flag(name: string): boolean {
+export function flag(name: string): boolean {
   const v = process.env[name]?.trim().toLowerCase();
   return v === 'true' || v === '1' || v === 'yes';
 }
@@ -41,7 +41,7 @@ function flag(name: string): boolean {
  * змінної. З `?? null` канал вважався налаштованим і бот опитував Telegram із
  * пустим токеном, отримуючи 404 кожні три секунди.
  */
-function optional(name: string): string | null {
+export function optional(name: string): string | null {
   const v = process.env[name]?.trim();
   return v ? v : null;
 }

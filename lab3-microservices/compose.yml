@@ -1,0 +1,295 @@
+# Лабораторна 3: той самий застосунок, розпиляний на пʼять сервісів.
+#
+# Відмінність від лабораторної 2 — не в коді, а в МЕЖАХ. У лабі 2 пʼять
+# контейнерів ділили одну базу й один процес API; тут кожна вертикаль має
+# власну базу, власний процес і спілкується з сусідами лише по HTTP.
+#
+#   postgres-identity        реквізити входу обох ролей
+#   postgres-scheduling      teachers, availability_rules, enrollments, slots, external_busy
+#   postgres-billing         students, transactions, payments, еквайринг
+#   postgres-notifications   notifications + проєкція контактів
+#   redis                    шина подій, як у лабі 2
+#   migrate-*                одноразові: спільні міграції + різ по межі сервіса
+#   identity                 вхід, токени, зона
+#   scheduling               доступність, бронювання, перенесення, стрічки .ics
+#   billing                  баланс, журнал проводок, оплата карткою
+#   notifications            журнал нагадувань, канал доставки, привʼязка чату
+#   gateway                  єдиний вхід: /api за префіксом + та сама SPA
+#   *-worker                 фонова робота кожного сервіса
+#
+# Образ ОДИН на всі сервіси — той самий кореневий Dockerfile, що й у лабі 2.
+# Відрізняється лише команда. Саме це й робить порівняння архітектур
+# коректним: розʼїхались межі, а не реалізації.
+#
+#   docker compose -f lab3-microservices/compose.yml up -d --build
+#   docker compose -f lab3-microservices/compose.yml --profile seed run --rm reset
+#   docker compose -f lab3-microservices/compose.yml logs -f scheduling-worker
+#   docker compose -f lab3-microservices/compose.yml down -v
+name: tutorflow-lab3
+
+# ─────────────────────────── спільне ───────────────────────────
+#
+# Усе, що однакове в усіх пʼяти сервісах. Адреси сусідів перелічені тут
+# ПОВНІСТЮ, хоч кожному сервісу потрібні не всі: конфіг лаби 3 читає їх
+# ліниво, а зайва змінна оточення нічого не коштує. Натомість видно весь граф
+# звʼязків одним блоком.
+x-service: &service
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  image: tutorflow:lab3
+  # Секрети — з `.env` У КОРЕНІ репозиторію: compose читає `.env` із каталогу
+  # compose-файла, тому підстановка ${…} дала б порожнє значення.
+  env_file:
+    - path: ../.env
+      required: false
+  environment: &service-env
+    JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+    TEACHER_TIMEZONE: ${TEACHER_TIMEZONE:-Europe/Kyiv}
+    # Зовнішня адреса — адреса GATEWAY, а не сервіса: від неї рахуються і
+    # посилання на стрічку .ics, і адреса повернення зі сторінки оплати.
+    PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8083}
+    # Спільний секрет внутрішніх маршрутів. Другий рубіж: перший — те, що
+    # порти сервісів назовні не публікуються взагалі.
+    INTERNAL_TOKEN: ${INTERNAL_TOKEN:-lab3-internal}
+    IDENTITY_URL: http://identity:8080
+    SCHEDULING_URL: http://scheduling:8080
+    BILLING_URL: http://billing:8080
+    NOTIFICATIONS_URL: http://notifications:8080
+    REDIS_URL: redis://redis:6379
+  restart: unless-stopped
+
+# Чотири бази різняться лише імʼям контейнера й томом — решта однакова.
+x-postgres: &postgres
+  image: postgres:17-alpine
+  environment:
+    POSTGRES_DB: tutorflow
+    POSTGRES_USER: tutorflow
+    POSTGRES_PASSWORD: tutorflow
+  # Порти назовні не публікуються: до бази сервіса має доступ лише він сам.
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U tutorflow -d tutorflow"]
+    interval: 5s
+    timeout: 3s
+    retries: 10
+  restart: unless-stopped
+
+x-healthcheck: &healthcheck
+  test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
+
+services:
+  # ─────────────────────── бази: по одній на сервіс ───────────────────────
+  postgres-identity:
+    <<: *postgres
+    volumes: [pg-identity:/var/lib/postgresql/data]
+
+  postgres-scheduling:
+    <<: *postgres
+    volumes: [pg-scheduling:/var/lib/postgresql/data]
+
+  postgres-billing:
+    <<: *postgres
+    volumes: [pg-billing:/var/lib/postgresql/data]
+
+  postgres-notifications:
+    <<: *postgres
+    volumes: [pg-notifications:/var/lib/postgresql/data]
+
+  # Шина подій. Одна на всіх: подія — це факт, а не адресоване повідомлення,
+  # і тримати чотири стріми означало б вирішувати за споживача, що йому цікаво.
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ─────────────────────── схема: та сама, різана по межі ───────────────────────
+  #
+  # Міграції спільні — ті самі файли, що в моноліті. Після них кожна база
+  # втрачає все, що цьому сервісу не належить: таблиці сусідів і колонки, у
+  # яких інший господар. Через це випадкове звернення за межу падає з помилкою
+  # бази, а не повертає тихо застарілий рядок.
+  migrate-identity:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/migrate.js", "identity"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-identity:5432/tutorflow
+    depends_on:
+      postgres-identity: { condition: service_healthy }
+    restart: "no"
+
+  migrate-scheduling:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/migrate.js", "scheduling"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-scheduling:5432/tutorflow
+    depends_on:
+      postgres-scheduling: { condition: service_healthy }
+    restart: "no"
+
+  migrate-billing:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/migrate.js", "billing"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-billing:5432/tutorflow
+    depends_on:
+      postgres-billing: { condition: service_healthy }
+    restart: "no"
+
+  migrate-notifications:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/migrate.js", "notifications"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-notifications:5432/tutorflow
+    depends_on:
+      postgres-notifications: { condition: service_healthy }
+    restart: "no"
+
+  # ─────────────────────── сервіси ───────────────────────
+  identity:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/main.js", "identity"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-identity:5432/tutorflow
+    depends_on:
+      postgres-identity: { condition: service_healthy }
+      migrate-identity: { condition: service_completed_successfully }
+    healthcheck: *healthcheck
+
+  scheduling:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/main.js", "scheduling"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-scheduling:5432/tutorflow
+    depends_on:
+      postgres-scheduling: { condition: service_healthy }
+      migrate-scheduling: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck: *healthcheck
+
+  billing:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/main.js", "billing"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-billing:5432/tutorflow
+    depends_on:
+      postgres-billing: { condition: service_healthy }
+      migrate-billing: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck: *healthcheck
+
+  notifications:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/main.js", "notifications"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-notifications:5432/tutorflow
+    depends_on:
+      postgres-notifications: { condition: service_healthy }
+      migrate-notifications: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck: *healthcheck
+
+  # Єдиний контейнер із опублікованим портом. Бази в нього немає взагалі.
+  gateway:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/main.js", "gateway"]
+    environment:
+      <<: *service-env
+    ports:
+      - "${GATEWAY_PORT:-8083}:8080"
+    depends_on:
+      identity: { condition: service_started }
+      scheduling: { condition: service_started }
+      billing: { condition: service_started }
+      notifications: { condition: service_started }
+    healthcheck: *healthcheck
+
+  # ─────────────────────── фонова робота ───────────────────────
+  #
+  # Роботи ті самі, що у воркері лабораторної 2, тільки кожна там, де її дані.
+  # Сервісу входу воркер не потрібен: фонової роботи в нього немає.
+  scheduling-worker:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/worker.js", "scheduling"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-scheduling:5432/tutorflow
+      MAINTENANCE_INTERVAL_SEC: ${MAINTENANCE_INTERVAL_SEC:-60}
+    depends_on:
+      postgres-scheduling: { condition: service_healthy }
+      migrate-scheduling: { condition: service_completed_successfully }
+
+  billing-worker:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/worker.js", "billing"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-billing:5432/tutorflow
+    depends_on:
+      postgres-billing: { condition: service_healthy }
+      migrate-billing: { condition: service_completed_successfully }
+
+  notifications-worker:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/worker.js", "notifications"]
+    environment:
+      <<: *service-env
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-notifications:5432/tutorflow
+      MAINTENANCE_INTERVAL_SEC: ${MAINTENANCE_INTERVAL_SEC:-60}
+    depends_on:
+      postgres-notifications: { condition: service_healthy }
+      migrate-notifications: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  # ─────────────────────── демо-дані ───────────────────────
+  #
+  # Один контейнер на всі чотири бази, і це не економія: дані мусять бути ТІ
+  # САМІ, з тими самими ідентифікаторами. Студент №2 у білінгу й студент №2 у
+  # нагадуваннях — та сама людина, і тримається ця рівність на детермінованому
+  # сідері: `truncate … restart identity` плюс фіксований порядок вставки.
+  #
+  # Під профілем, бо скид витирає бази: запускається руками й лише тоді, коли
+  # цього справді хочуть. NODE_ENV перебивається на development — у самому
+  # сідері стоїть запобіжник, який відмовляється працювати в продакшні.
+  reset:
+    <<: *service
+    command: ["node", "services/api/dist/lab3/reset.js"]
+    environment:
+      <<: *service-env
+      NODE_ENV: development
+      DATABASE_URL: postgres://tutorflow:tutorflow@postgres-identity:5432/tutorflow
+      DATABASE_URL_IDENTITY: postgres://tutorflow:tutorflow@postgres-identity:5432/tutorflow
+      DATABASE_URL_SCHEDULING: postgres://tutorflow:tutorflow@postgres-scheduling:5432/tutorflow
+      DATABASE_URL_BILLING: postgres://tutorflow:tutorflow@postgres-billing:5432/tutorflow
+      DATABASE_URL_NOTIFICATIONS: postgres://tutorflow:tutorflow@postgres-notifications:5432/tutorflow
+    depends_on:
+      postgres-identity: { condition: service_healthy }
+      postgres-scheduling: { condition: service_healthy }
+      postgres-billing: { condition: service_healthy }
+      postgres-notifications: { condition: service_healthy }
+    restart: "no"
+    profiles: ["seed"]
+
+volumes:
+  pg-identity:
+  pg-scheduling:
+  pg-billing:
+  pg-notifications:
+  redis-data:

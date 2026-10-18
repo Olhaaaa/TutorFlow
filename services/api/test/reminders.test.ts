@@ -15,7 +15,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { REMINDER_LEAD_HOURS } from '@tutorflow/core';
 import { createDatabase } from '../src/db/database.module.js';
 import type { EventBus } from '../src/events/event-bus.js';
-import type { DomainEvent } from '../src/events/events.js';
+import type { DomainEvent } from '@tutorflow/contracts';
 import { RemindersService } from '../src/scheduling/reminders.service.js';
 import { SlotsRepository } from '../src/scheduling/slots.repository.js';
 import { TeachersRepository } from '../src/scheduling/teachers.repository.js';

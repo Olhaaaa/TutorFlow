@@ -1,5 +1,5 @@
 import { NotImplementedException } from '@nestjs/common';
-import type { Executor } from './slots.repository.js';
+import type { Executor } from '../db/database.module.js';
 
 /**
  * МЕЖА МІЖ МОДУЛЯМИ. Оголошена з боку розкладу, реалізується білінгом.

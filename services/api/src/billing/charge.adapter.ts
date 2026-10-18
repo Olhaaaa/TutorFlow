@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { chargeAmount, isAffordable, minor, refundAmount } from '@tutorflow/core';
 import type { ChargePort } from '../scheduling/ports.js';
-import type { Executor } from '../scheduling/slots.repository.js';
+import type { Executor } from '../db/database.module.js';
 import { StudentsRepository } from './students.repository.js';
 import { TransactionsRepository } from './transactions.repository.js';
 

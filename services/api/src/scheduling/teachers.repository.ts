@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { PaymentProviderColumn } from '../db/schema.js';
 import { KYSELY, type Database } from '../db/database.module.js';
-import type { Executor } from './slots.repository.js';
+import type { Executor } from '../db/database.module.js';
 
 /** Таблиця `teachers` належить модулю розкладу: з неї беруться правила. */
 @Injectable()

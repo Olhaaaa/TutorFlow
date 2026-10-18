@@ -1,5 +1,5 @@
 import { Global, Module, type OnApplicationShutdown } from '@nestjs/common';
-import { Kysely, PostgresDialect } from 'kysely';
+import { Kysely, PostgresDialect, type Transaction } from 'kysely';
 import { Pool, types } from 'pg';
 import { config } from '../config.js';
 import type { DB } from './schema.js';
@@ -19,6 +19,17 @@ types.setTypeParser(types.builtins.INT8, (value) => Number(value));
 
 export const KYSELY = 'KYSELY';
 export type Database = Kysely<DB>;
+
+/**
+ * Куди виконувати запрос: у з'єднання чи в транзакцію.
+ *
+ * Тип живе в шарі бази, а не в репозиторії слотів, де був раніше. Його
+ * приймають усі репозиторії й усі порти між модулями — тобто він описує
+ * ДОСТУП ДО ДАНИХ, а не розклад. Доки він лежав у `scheduling`, кожен модуль
+ * білінгу, який просто хотів виконати запрос у чужій транзакції, мусив
+ * імпортувати щось із сусідньої вертикалі.
+ */
+export type Executor = Database | Transaction<DB>;
 
 export function createDatabase(connectionString = config.databaseUrl): Database {
   return new Kysely<DB>({

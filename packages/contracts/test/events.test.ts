@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   dedupKey, renderNotification, type DomainEvent,
-} from '../src/events/events.js';
+} from '@tutorflow/contracts';
 
 const credited: DomainEvent = {
   type: 'payment.credited',

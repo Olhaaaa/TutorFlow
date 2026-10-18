@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { KYSELY, type Database } from '../db/database.module.js';
 import type { TransactionKindColumn } from '../db/schema.js';
-import type { Executor } from '../scheduling/slots.repository.js';
+import type { Executor } from '../db/database.module.js';
 
 /**
  * Напрямок руху коштів для фільтра історії: усе, надходження, списання.

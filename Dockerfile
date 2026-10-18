@@ -21,6 +21,7 @@ WORKDIR /app
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/core/package.json packages/core/
+COPY packages/contracts/package.json packages/contracts/
 COPY services/api/package.json services/api/
 COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile
@@ -28,8 +29,10 @@ RUN pnpm install --frozen-lockfile
 # --- збірка бекенду ---
 FROM deps AS build-api
 COPY packages/core packages/core
+COPY packages/contracts packages/contracts
 COPY services/api services/api
 RUN pnpm --filter @tutorflow/core build \
+ && pnpm --filter @tutorflow/contracts build \
  && pnpm --filter api build
 
 # --- збірка фронтенду: outDir у vite.config.ts веде в services/api/static ---
@@ -42,12 +45,14 @@ FROM base AS runtime
 ENV NODE_ENV=production
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/core/package.json packages/core/
+COPY packages/contracts/package.json packages/contracts/
 COPY services/api/package.json services/api/
 COPY apps/web/package.json apps/web/
-# api... — сам api плюс його залежності по воркспейсу (core). React у рантайм
+# api... — сам api плюс його залежності по воркспейсу (core, contracts). React у рантайм
 # не ставиться: бандлер уже вбудував його у статику, і сервер його не імпортує.
 RUN pnpm install --frozen-lockfile --prod --filter api...
 COPY --from=build-api /app/packages/core/dist packages/core/dist
+COPY --from=build-api /app/packages/contracts/dist packages/contracts/dist
 COPY --from=build-api /app/services/api/dist services/api/dist
 COPY --from=build-web /app/services/api/static services/api/static
 

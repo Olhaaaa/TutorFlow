@@ -10,13 +10,13 @@ import {
 } from '@tutorflow/core';
 import { StudentsRepository } from '../billing/students.repository.js';
 import { config } from '../config.js';
-import { KYSELY, type Database } from '../db/database.module.js';
+import { KYSELY, type Database, type Executor } from '../db/database.module.js';
 import { EventBus } from '../events/event-bus.js';
 import { AvailabilityRepository } from './availability.repository.js';
 import { ExternalBusyRepository } from './external-busy.repository.js';
 import { buildCalendar, type CalendarEvent } from './ics.js';
 import { CHARGE_PORT, type ChargePort } from './ports.js';
-import { SlotsRepository, type Executor } from './slots.repository.js';
+import { SlotsRepository } from './slots.repository.js';
 import { TeachersRepository } from './teachers.repository.js';
 import { toViewState, type SlotView, type TeacherSlotView } from './slot-view.js';
 

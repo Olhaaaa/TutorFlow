@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { KYSELY, type Database } from '../db/database.module.js';
-import type { Executor } from '../scheduling/slots.repository.js';
+import type { Executor } from '../db/database.module.js';
 
 /** Таблиця `students` належить модулю білінгу: на ній тримається баланс. */
 @Injectable()

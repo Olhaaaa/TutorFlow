@@ -3,7 +3,7 @@ import { createClient, type RedisClientType } from 'redis';
 import { config } from '../config.js';
 import {
   EVENTS_STREAM, dedupKey, renderNotification, type DomainEvent,
-} from '../events/events.js';
+} from '@tutorflow/contracts';
 import { NotificationsDelivery } from './notifications.delivery.js';
 import { NotificationsRepository } from './notifications.repository.js';
 

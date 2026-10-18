@@ -2,9 +2,9 @@ import {
   BadRequestException, Inject, Injectable, NotFoundException, forwardRef,
 } from '@nestjs/common';
 import { balanceFrom, minor, shortfall } from '@tutorflow/core';
-import { KYSELY, type Database } from '../db/database.module.js';
+import { KYSELY, type Database, type Executor } from '../db/database.module.js';
 import { SchedulingService } from '../scheduling/scheduling.service.js';
-import { SlotsRepository, type Executor } from '../scheduling/slots.repository.js';
+import { SlotsRepository } from '../scheduling/slots.repository.js';
 import { StudentsRepository } from './students.repository.js';
 import { type HistoryDirection, TransactionsRepository } from './transactions.repository.js';
 

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql, type SqlBool } from 'kysely';
 import { KYSELY, type Database } from '../db/database.module.js';
 import type { PaymentProviderColumn, PaymentStatusColumn } from '../db/schema.js';
-import type { Executor } from '../scheduling/slots.repository.js';
+import type { Executor } from '../db/database.module.js';
 
 @Injectable()
 export class PaymentsRepository {

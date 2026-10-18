@@ -1,7 +1,7 @@
 import { Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { createClient, type RedisClientType } from 'redis';
 import { config } from '../config.js';
-import { EVENTS_STREAM, type DomainEvent } from './events.js';
+import { EVENTS_STREAM, type DomainEvent } from '@tutorflow/contracts';
 
 /**
  * Публікація подій у Redis Stream.

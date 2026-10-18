@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { KYSELY, type Database } from '../db/database.module.js';
-import type { Executor } from '../scheduling/slots.repository.js';
-import type { DomainEvent, RenderedNotification } from '../events/events.js';
+import type { Executor } from '../db/database.module.js';
+import type { DomainEvent, RenderedNotification } from '@tutorflow/contracts';
 
 /** Журнал нагадувань. Належить вертикалі «Гроші й канали». */
 @Injectable()

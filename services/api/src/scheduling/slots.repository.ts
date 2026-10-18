@@ -1,9 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { sql, type Kysely, type Transaction } from 'kysely';
-import { KYSELY, type Database } from '../db/database.module.js';
-import type { DB, SlotStatusColumn } from '../db/schema.js';
-
-export type Executor = Kysely<DB> | Transaction<DB>;
+import { sql } from 'kysely';
+import { KYSELY, type Database, type Executor } from '../db/database.module.js';
+import type { SlotStatusColumn } from '../db/schema.js';
 
 /** Чим слот стає при захопленні. Поля різні, бо різні інваріанти в базі. */
 export type ClaimOutcome =

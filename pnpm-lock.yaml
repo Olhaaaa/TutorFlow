@@ -221,6 +221,15 @@ importers:
         specifier: ^8.3.0
         version: 8.3.2(@types/node@24.19.1)(esbuild@0.28.2)(jiti@2.7.0)
 
+  packages/contracts:
+    devDependencies:
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@26.6.4)(jiti@2.7.0)(lightningcss@1.33.0)
+
   packages/core:
     devDependencies:
       typescript:
@@ -259,6 +268,9 @@ importers:
       '@node-rs/bcrypt':
         specifier: ^1.10.9
         version: 1.10.9
+      '@tutorflow/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@tutorflow/core':
         specifier: workspace:*
         version: link:../../packages/core

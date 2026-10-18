@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { KYSELY, type Database } from '../db/database.module.js';
-import type { Executor } from './slots.repository.js';
+import type { Executor } from '../db/database.module.js';
 
 @Injectable()
 export class AvailabilityRepository {

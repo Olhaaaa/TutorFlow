@@ -8,14 +8,15 @@ import {
   NothingToCancelError, rescheduleRejection, slotsCoveredBy, teacherCancelOutcome,
   type TeacherCancelOutcome,
 } from '@tutorflow/core';
-import { StudentsRepository } from '../billing/students.repository.js';
 import { config } from '../config.js';
 import { KYSELY, type Database, type Executor } from '../db/database.module.js';
 import { EventBus } from '../events/event-bus.js';
 import { AvailabilityRepository } from './availability.repository.js';
 import { ExternalBusyRepository } from './external-busy.repository.js';
 import { buildCalendar, type CalendarEvent } from './ics.js';
-import { CHARGE_PORT, type ChargePort } from './ports.js';
+import {
+  CHARGE_PORT, STUDENT_DIRECTORY, type ChargePort, type StudentDirectoryPort,
+} from './ports.js';
 import { SlotsRepository } from './slots.repository.js';
 import { TeachersRepository } from './teachers.repository.js';
 import { toViewState, type SlotView, type TeacherSlotView } from './slot-view.js';
@@ -36,19 +37,32 @@ export class SchedulingService {
     @Inject(CHARGE_PORT) private readonly charge: ChargePort,
     private readonly events: EventBus,
     private readonly externalBusy: ExternalBusyRepository,
-    private readonly students: StudentsRepository,
+    @Inject(STUDENT_DIRECTORY) private readonly students: StudentDirectoryPort,
   ) {}
 
-  /** Розклад очима викладача: сирий статус і хто записаний. */
+  /**
+   * Розклад очима викладача: сирий статус і хто записаний.
+   *
+   * Імена беруться ДРУГИМ запросом через довідник, а не `join`-ом до
+   * `students`: таблиця студентів належить білінгу. Ціна — один зайвий
+   * запрос на екран, і вона свідома: `join` до чужої таблиці — рівно те, що
+   * неможливо виконати, коли база в сусіда.
+   */
   async teacherCalendar(teacherId: number, from: Date, to: Date): Promise<TeacherSlotView[]> {
-    const rows = await this.slots.inRangeWithStudents(teacherId, from, to);
+    const rows = await this.slots.inRange(teacherId, from, to);
+    const names = await this.students.namesByIds(
+      [...new Set(rows.map((r) => r.student_id).filter((id): id is number => id !== null))],
+    );
+
     return rows.map((r) => ({
       id: r.id,
       startAt: new Date(r.start_at).toISOString(),
       endAt: new Date(r.end_at).toISOString(),
       priceMinor: r.price_minor,
       status: r.status,
-      student: r.student_id === null ? null : { id: r.student_id, name: r.student_name ?? '—' },
+      student: r.student_id === null
+        ? null
+        : { id: r.student_id, name: names.get(r.student_id) ?? '—' },
       payBy: r.hold_expires_at ? new Date(r.hold_expires_at).toISOString() : null,
     }));
   }
@@ -259,12 +273,17 @@ export class SchedulingService {
     const from = new Date(now.getTime() - 30 * 86_400_000);
     const to = new Date(now.getTime() + 180 * 86_400_000);
     const rows = await this.slots.forCalendar(teacher.id, from, to);
+    const names = await this.students.namesByIds(
+      [...new Set(rows.map((r) => r.student_id).filter((id): id is number => id !== null))],
+    );
 
     const events: CalendarEvent[] = rows.map((r) => ({
       slotId: r.id,
       startAt: new Date(r.start_at),
       endAt: new Date(r.end_at),
-      summary: r.student_name ? `Заняття: ${r.student_name}` : 'Заняття',
+      summary: r.student_id !== null && names.get(r.student_id)
+        ? `Заняття: ${names.get(r.student_id)}`
+        : 'Заняття',
       description: r.status === 'pre_booked' ? 'Не оплачене' : undefined,
       cancelled: r.status === 'cancelled_late',
     }));
@@ -283,12 +302,10 @@ export class SchedulingService {
    * заняття, і відкликати її він мусить уміти сам, не чіпаючи нічиєї іншої.
    */
   async studentCalendarLink(studentId: number) {
-    const row = await this.students.ensureCalendarToken(
-      studentId, randomBytes(24).toString('base64url'),
-    );
-    if (!row?.calendar_token) throw new NotFoundException('студента не знайдено');
+    const row = await this.students.ensureCalendarToken(studentId);
+    if (!row) throw new NotFoundException('студента не знайдено');
 
-    const path = `/api/calendar/student/${row.calendar_token}.ics`;
+    const path = `/api/calendar/student/${row.calendarToken}.ics`;
     return {
       path,
       url: config.publicBaseUrl ? new URL(path, config.publicBaseUrl).toString() : null,

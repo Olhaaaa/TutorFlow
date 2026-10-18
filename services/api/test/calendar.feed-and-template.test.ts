@@ -14,6 +14,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/db/database.module.js';
 import { ChargeAdapter } from '../src/billing/charge.adapter.js';
+import { StudentDirectoryAdapter } from '../src/billing/student-directory.adapter.js';
 import { StudentsRepository } from '../src/billing/students.repository.js';
 import { TransactionsRepository } from '../src/billing/transactions.repository.js';
 import { EventBus } from '../src/events/event-bus.js';
@@ -34,7 +35,7 @@ const scheduling = new SchedulingService(
   new ChargeAdapter(students, transactions),
   new EventBus(),
   new ExternalBusyRepository(db),
-  students,
+  new StudentDirectoryAdapter(students),
 );
 
 const PRICE = 50_000;

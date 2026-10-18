@@ -41,6 +41,22 @@ export class StudentsRepository {
     );
   }
 
+  /**
+   * Імена за ідентифікаторами — для розкладу викладача й для стрічки `.ics`.
+   *
+   * Пакетом, а не по одному: екран тижня містить до пʼятдесяти занять, і
+   * запрос на кожне перетворив би один `join` на пʼятдесят звернень. У
+   * мікросервісах той самий метод стає ОДНИМ запросом по HTTP, тому межа
+   * лишається дешевою.
+   */
+  namesByIds(ids: readonly number[], tx?: Executor) {
+    return this.db(tx)
+      .selectFrom('students')
+      .select(['id', 'name'])
+      .where('id', 'in', [...ids])
+      .execute();
+  }
+
   async listByTeacher(teacherId: number, tx?: Executor) {
     return this.db(tx)
       .selectFrom('students')

@@ -1,9 +1,10 @@
 import { Module, forwardRef } from '@nestjs/common';
-import { CHARGE_PORT } from '../scheduling/ports.js';
+import { CHARGE_PORT, STUDENT_DIRECTORY } from '../scheduling/ports.js';
 import { SchedulingModule } from '../scheduling/scheduling.module.js';
 import { BillingController } from './billing.controller.js';
 import { BillingService } from './billing.service.js';
 import { ChargeAdapter } from './charge.adapter.js';
+import { StudentDirectoryAdapter } from './student-directory.adapter.js';
 import { StudentsRepository } from './students.repository.js';
 import { TransactionsRepository } from './transactions.repository.js';
 
@@ -29,7 +30,12 @@ import { TransactionsRepository } from './transactions.repository.js';
     TransactionsRepository,
     ChargeAdapter,
     { provide: CHARGE_PORT, useExisting: ChargeAdapter },
+    StudentDirectoryAdapter,
+    { provide: STUDENT_DIRECTORY, useExisting: StudentDirectoryAdapter },
   ],
-  exports: [BillingService, CHARGE_PORT, StudentsRepository, TransactionsRepository],
+  exports: [
+    BillingService, CHARGE_PORT, STUDENT_DIRECTORY,
+    StudentsRepository, TransactionsRepository,
+  ],
 })
 export class BillingModule {}

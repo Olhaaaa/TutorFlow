@@ -215,6 +215,29 @@ export class SlotsRepository {
       .execute();
   }
 
+  /**
+   * Заняття студента для його стрічки `.ics`.
+   *
+   * Фільтр по `student_id`, а не по викладачеві: у стрічку студента не має
+   * потрапити жодне чуже заняття, навіть як «зайнято». Сам стовпець і робить
+   * цю гарантію — забути умову тут неможливо, запит просто поверне порожньо.
+   */
+  async forStudentCalendar(studentId: number, from: Date, to: Date, tx?: Executor) {
+    return this.db(tx)
+      .selectFrom('slots')
+      .innerJoin('teachers', 'teachers.id', 'slots.teacher_id')
+      .select([
+        'slots.id as id', 'slots.start_at as start_at', 'slots.end_at as end_at',
+        'slots.status as status', 'teachers.name as teacher_name',
+      ])
+      .where('slots.student_id', '=', studentId)
+      .where('slots.status', 'in', ['pre_booked', 'booked', 'done', 'cancelled_late'])
+      .where('slots.start_at', '>=', from)
+      .where('slots.start_at', '<', to)
+      .orderBy('slots.start_at')
+      .execute();
+  }
+
   /** Неоплачені слоти студента в ХРОНОЛОГІЧНОМУ порядку — саме так їх конвертує білінг. */
   async pendingPayment(studentId: number, tx?: Executor) {
     return this.db(tx)
@@ -310,6 +333,36 @@ export class SlotsRepository {
              enrollment_id = ${params.enrollmentId},
              hold_expires_at = s.start_at - make_interval(hours => t.payment_deadline_hours)
         from teachers t
+       where t.id = s.teacher_id
+         and s.teacher_id = ${params.teacherId}
+         and s.status = 'free'
+         and s.start_at > now()
+         and extract(dow from s.start_at at time zone t.timezone) = ${params.weekday}
+         and (s.start_at at time zone t.timezone)::time = ${params.startTime}::time
+      returning s.id
+    `.execute(this.db(tx));
+    return res.rows.length;
+  }
+
+  /**
+   * Прибрати майбутні ВІЛЬНІ слоти цієї години шаблону.
+   *
+   * Зайняті не чіпаються взагалі — ні заброньовані, ні закріплені, ні
+   * проведені. Прибрати годину з шаблону означає «більше її не продавай», а
+   * не «скасуй те, на що люди вже записались»: про записані заняття викладач
+   * домовляється зі студентом, і робити це за нього застосунок не має права.
+   *
+   * День тижня й час рахуються в зоні ВИКЛАДАЧА тим самим виразом, що й
+   * генерація, — інакше після переходу на зимовий час видалялась би сусідня
+   * година.
+   */
+  async deleteFreeByRule(
+    params: { teacherId: number; weekday: number; startTime: string },
+    tx?: Executor,
+  ) {
+    const res = await sql<{ id: number }>`
+      delete from slots s
+       using teachers t
        where t.id = s.teacher_id
          and s.teacher_id = ${params.teacherId}
          and s.status = 'free'

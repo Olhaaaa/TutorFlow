@@ -10,8 +10,15 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { dateTimeLabel } from '@/features/calendar/time';
 
-/** Вікно, у якому показуємо зайнятість: місяць назад і три вперед. */
-function window(): { from: Date; to: Date } {
+/**
+ * Вікно, у якому показуємо зайнятість: місяць назад і три вперед.
+ *
+ * Назва саме `busyWindow`, а не `window`: друга затінила б глобальний
+ * обʼєкт у всьому модулі, і React Refresh у режимі розробки не знайшов би
+ * свій `window.$RefreshReg$` — сторінка лишалась би порожньою, хоча
+ * продакшн-збірка працює.
+ */
+function busyWindow(): { from: Date; to: Date } {
   const now = Date.now();
   return { from: new Date(now - 30 * 86_400_000), to: new Date(now + 90 * 86_400_000) };
 }
@@ -41,7 +48,7 @@ export function BusyCard({ session }: { session: Session }) {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const w = window();
+    const w = busyWindow();
     try {
       const [list, calendar] = await Promise.all([
         api.teacher.busy(session.token, w.from, w.to),

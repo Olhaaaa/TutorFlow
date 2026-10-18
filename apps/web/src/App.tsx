@@ -19,6 +19,7 @@ import { PaymentReturn, TopupCard } from '@/features/balance/Topup';
 import { TelegramCard } from '@/features/profile/TelegramCard';
 import { TimezoneCard } from '@/features/profile/TimezoneCard';
 import { Calendar } from '@/features/calendar/Calendar';
+import { CalendarFeedCard } from '@/features/calendar/CalendarFeedCard';
 import { addDays, dayKey, weekAnchor, weekDays } from '@/features/calendar/time';
 import { Login } from '@/routes/Login';
 import { TeacherHome } from '@/routes/TeacherHome';
@@ -241,6 +242,7 @@ export function App() {
                   <TopupCard session={session} />
                   <TimezoneCard session={session} onChange={changeTimezone} />
                   <TelegramCard session={session} />
+                  <CalendarFeedCard session={session} />
                 </div>
               )}
             </div>

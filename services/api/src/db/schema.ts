@@ -42,6 +42,8 @@ export interface StudentsTable {
   timezone: string;
   telegram_chat_id: number | null;
   telegram_link_code: string | null;
+  /** Секрет у рядку адреси стрічки .ics. Окремий від викладацького. */
+  calendar_token: string | null;
   created_at: Generated<Timestamp>;
 }
 

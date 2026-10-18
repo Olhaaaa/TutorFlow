@@ -20,6 +20,21 @@ import { SchedulingService } from './scheduling.service.js';
 export class CalendarController {
   constructor(private readonly scheduling: SchedulingService) {}
 
+  @Get('calendar/student/:token')
+  @Header('Content-Type', 'text/calendar; charset=utf-8')
+  @Header('Cache-Control', 'private, max-age=60')
+  @ApiOperation({
+    summary: 'Стрічка занять студента',
+    description:
+      'Окремий токен і окремий шлях: у стрічці лише заняття цього студента. '
+      + 'Сегмент student іде ПЕРЕД токеном, тому з викладацьким маршрутом '
+      + 'вона не плутається — у того шлях на сегмент коротший.',
+  })
+  @ApiResponse({ status: 404, description: 'стрічку відкликано або адреса хибна' })
+  studentFeed(@Param('token') token: string): Promise<string> {
+    return this.scheduling.studentCalendarFeed(token.replace(/\.ics$/i, ''));
+  }
+
   @Get('calendar/:token')
   @Header('Content-Type', 'text/calendar; charset=utf-8')
   // Стрічку перечитують цілком і часто — хай проміжні кеші тримають її хвилину.

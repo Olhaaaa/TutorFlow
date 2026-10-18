@@ -8,6 +8,7 @@ import {
   NothingToCancelError, rescheduleRejection, slotsCoveredBy, teacherCancelOutcome,
   type TeacherCancelOutcome,
 } from '@tutorflow/core';
+import { StudentsRepository } from '../billing/students.repository.js';
 import { config } from '../config.js';
 import { KYSELY, type Database } from '../db/database.module.js';
 import { EventBus } from '../events/event-bus.js';
@@ -35,6 +36,7 @@ export class SchedulingService {
     @Inject(CHARGE_PORT) private readonly charge: ChargePort,
     private readonly events: EventBus,
     private readonly externalBusy: ExternalBusyRepository,
+    private readonly students: StudentsRepository,
   ) {}
 
   /** Розклад очима викладача: сирий статус і хто записаний. */
@@ -270,6 +272,64 @@ export class SchedulingService {
     return buildCalendar(events, `Tutorflow — ${teacher.name}`, now);
   }
 
+  /* ---------- стрічка студента ---------- */
+
+  /**
+   * Адреса стрічки студента. Повторює викладацьку свідомо: токен створюється
+   * при першому зверненні й далі не змінюється, бо адресу вже вставлено в
+   * чужу програму.
+   *
+   * Окремий токен, а не спільний із викладачем: у стрічці студента лише його
+   * заняття, і відкликати її він мусить уміти сам, не чіпаючи нічиєї іншої.
+   */
+  async studentCalendarLink(studentId: number) {
+    const row = await this.students.ensureCalendarToken(
+      studentId, randomBytes(24).toString('base64url'),
+    );
+    if (!row?.calendar_token) throw new NotFoundException('студента не знайдено');
+
+    const path = `/api/calendar/student/${row.calendar_token}.ics`;
+    return {
+      path,
+      url: config.publicBaseUrl ? new URL(path, config.publicBaseUrl).toString() : null,
+    };
+  }
+
+  async revokeStudentCalendarLink(studentId: number) {
+    await this.students.clearCalendarToken(studentId);
+    return { revoked: true };
+  }
+
+  /**
+   * Стрічка `.ics` для календаря студента.
+   *
+   * Назва події — імʼя ВИКЛАДАЧА: у календарі студента «Заняття: Марія» несе
+   * зміст, а власне імʼя не несе жодного. Неоплачене заняття підписане, щоб
+   * нагадування приходило не лише від нас.
+   *
+   * Вікно те саме, що й у викладача: стрічку перечитують цілком, і віддавати
+   * в ній усю історію немає за чим.
+   */
+  async studentCalendarFeed(token: string, now = new Date()) {
+    const student = await this.students.byCalendarToken(token);
+    if (!student) throw new NotFoundException('стрічку не знайдено');
+
+    const from = new Date(now.getTime() - 30 * 86_400_000);
+    const to = new Date(now.getTime() + 180 * 86_400_000);
+    const rows = await this.slots.forStudentCalendar(student.id, from, to);
+
+    const events: CalendarEvent[] = rows.map((r) => ({
+      slotId: r.id,
+      startAt: new Date(r.start_at),
+      endAt: new Date(r.end_at),
+      summary: `Заняття: ${r.teacher_name}`,
+      description: r.status === 'pre_booked' ? 'Не оплачене' : undefined,
+      cancelled: r.status === 'cancelled_late',
+    }));
+
+    return buildCalendar(events, `Tutorflow — ${student.name}`, now);
+  }
+
   /**
    * Бронювання. Балансу достатньо — слот одразу `booked` і гроші списані;
    * ні — `pre_booked` із дедлайном оплати. Відмовляти через брак коштів не
@@ -442,6 +502,31 @@ export class SchedulingService {
     rule: { weekday: number; startTime: string; durationMin: number; priceMinor: number },
   ) {
     return this.availability.upsertRule(teacherId, rule);
+  }
+
+  /**
+   * Прибрати годину з тижневого шаблону.
+   *
+   * Дві дії в одній транзакції: правило вимикається, і майбутні ВІЛЬНІ слоти
+   * цієї години зникають із сітки. Без другої половини година лишалась би в
+   * продажу до кінця вже згенерованого горизонту — викладач прибрав би її з
+   * шаблону й далі бачив у розкладі.
+   *
+   * Зайняті заняття не чіпаються свідомо: прибрати годину — це «більше її не
+   * продавай», а не «скасуй тим, хто вже записався».
+   */
+  async removeAvailability(teacherId: number, ruleId: number) {
+    return this.db.transaction().execute(async (tx) => {
+      const rule = await this.availability.deactivateRule(ruleId, teacherId, tx);
+      if (!rule) throw new NotFoundException('години не знайдено');
+
+      const slotsRemoved = await this.slots.deleteFreeByRule(
+        { teacherId, weekday: rule.weekday, startTime: rule.start_time },
+        tx,
+      );
+
+      return { id: rule.id, slotsRemoved };
+    });
   }
 
   listEnrollments(teacherId: number) {

@@ -11,6 +11,7 @@ import {
   History,
   Loader2,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type Session } from '@/api/client';
@@ -66,10 +67,13 @@ interface SlotProps {
   armed: boolean;
   busy: boolean;
   onArm: () => void;
+  onDisarm: () => void;
   onConfirm: () => void;
 }
 
-function TeacherSlot({ slot, tz, cancellable, armed, busy, onArm, onConfirm }: SlotProps) {
+function TeacherSlot(
+  { slot, tz, cancellable, armed, busy, onArm, onDisarm, onConfirm }: SlotProps,
+) {
   const s = STATUS[slot.status];
   const { Icon } = s;
   const time = hhmm(slot.startAt, tz);
@@ -79,7 +83,7 @@ function TeacherSlot({ slot, tz, cancellable, armed, busy, onArm, onConfirm }: S
 
   return (
     <div
-      className={cn(slotBox({ variant: s.variant, shape: 'cell' }))}
+      className={cn(slotBox({ variant: s.variant, shape: 'cell' }), 'group')}
       title={slot.payBy ? `тримається до ${dateTimeLabel(slot.payBy, tz)}` : s.label}
     >
       <div className="flex items-center gap-1">
@@ -94,34 +98,65 @@ function TeacherSlot({ slot, tz, cancellable, armed, busy, onArm, onConfirm }: S
       )}
 
       {/*
+        Кнопка винесена з потоку в шар над карткою й проявляється наведенням
+        або фокусом. У потоці вона робила клітинку із заняттям вищою за
+        сусідні, а рядок сітки тягнеться за найвищою клітинкою — одне
+        оплачене заняття розпирало весь тиждень.
+      */}
+      {cancellable && !armed && (
+        <div className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <Button
+            size="icon-xs"
+            variant="outline"
+            className={cn(
+              'bg-background/80 backdrop-blur-[1px]',
+              onSolid
+                && 'border-slot-paid-fg/40 bg-slot-paid/80 text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
+            )}
+            disabled={busy}
+            onClick={onArm}
+            aria-label={`Скасувати заняття ${time}`}
+            title={`Скасувати заняття ${time}`}
+          >
+            <X aria-hidden />
+          </Button>
+        </div>
+      )}
+
+      {/*
         Два кліки, а не один: скасування рухає чужі гроші, і випадкове
-        попадання по клітинці в щільній сітці коштувало б заняття. Діалогу
-        підтвердження тут немає навмисно — у клітинці на 7 рем він перекрив би
-        собою весь тиждень, а підпис на самій кнопці каже те саме.
+        попадання по клітинці в щільній сітці коштувало б заняття. Друга дія
+        накривається шаром поверх клітинки — так питання видно навіть без
+        наведення, а висота рядка не змінюється від того, що хтось вагається.
       */}
       {armed && (
-        <span className="text-[0.7rem] leading-tight font-medium">
-          {slot.status === 'booked' ? `повернути ${money(slot.priceMinor)}?` : 'звільнити годину?'}
-        </span>
-      )}
-      {cancellable && (
-        <Button
-          size="xs"
-          variant={armed ? 'destructive' : 'outline'}
-          className={cn(
-            'mt-1 w-full',
-            !armed && onSolid
-              && 'border-slot-paid-fg/40 bg-transparent text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
-          )}
-          disabled={busy}
-          onClick={armed ? onConfirm : onArm}
-          aria-label={
-            armed ? `Підтвердити скасування заняття ${time}` : `Скасувати заняття ${time}`
-          }
-        >
-          {busy && <Loader2 className="animate-spin" aria-hidden />}
-          {armed ? 'підтвердити' : 'скасувати'}
-        </Button>
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 rounded-md bg-destructive/95 px-1 text-center text-white">
+          <span className="text-[0.7rem] leading-tight font-medium">
+            {slot.status === 'booked' ? `повернути ${money(slot.priceMinor)}?` : 'звільнити годину?'}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              size="xs"
+              variant="secondary"
+              disabled={busy}
+              onClick={onConfirm}
+              aria-label={`Підтвердити скасування заняття ${time}`}
+            >
+              {busy && <Loader2 className="animate-spin" aria-hidden />}
+              так
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              className="text-white hover:bg-white/15 hover:text-white"
+              disabled={busy}
+              onClick={onDisarm}
+              aria-label={`Не скасовувати заняття ${time}`}
+            >
+              ні
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -337,6 +372,7 @@ export function TeacherSchedule({ session }: { session: Session }) {
                 armed={armedId === s.id}
                 busy={cancellingId === s.id}
                 onArm={() => setArmedId(s.id)}
+                onDisarm={() => setArmedId(null)}
                 onConfirm={() => void cancel(s)}
               />
             )}

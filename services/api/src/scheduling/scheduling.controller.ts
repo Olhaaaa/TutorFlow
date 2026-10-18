@@ -144,6 +144,26 @@ export class SchedulingController {
     return this.scheduling.removeExternalBusy(teacher.id, id);
   }
 
+  @Get('student/calendar-link')
+  @ApiOperation({
+    summary: 'Адреса стрічки .ics для студента',
+    description:
+      'У стрічці лише заняття цього студента. Секрет у самій адресі: '
+      + 'календарна програма не вміє увійти. Створюється при першому зверненні.',
+  })
+  studentCalendarLink(@CurrentStudent() student: StudentContext) {
+    return this.scheduling.studentCalendarLink(student.id);
+  }
+
+  @Delete('student/calendar-link')
+  @ApiOperation({
+    summary: 'Відкликати стрічку студента',
+    description: 'Стара адреса перестає працювати негайно; нову можна випустити заново.',
+  })
+  revokeStudentCalendarLink(@CurrentStudent() student: StudentContext) {
+    return this.scheduling.revokeStudentCalendarLink(student.id);
+  }
+
   @Get('teacher/calendar-link')
   @ApiOperation({
     summary: 'Адреса стрічки .ics',
@@ -181,6 +201,21 @@ export class SchedulingController {
     @CurrentTeacher() teacher: { id: number },
   ) {
     return this.scheduling.setAvailability(teacher.id, dto);
+  }
+
+  @Delete('teacher/availability/:id')
+  @ApiOperation({
+    summary: 'Прибрати годину з шаблону',
+    description:
+      'Майбутні ВІЛЬНІ слоти цієї години зникають разом із нею. Уже записані '
+      + 'заняття лишаються: що з ними робити, вирішує людина.',
+  })
+  @ApiResponse({ status: 404, description: 'години немає або вона належить іншому викладачеві' })
+  removeAvailability(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentTeacher() teacher: { id: number },
+  ) {
+    return this.scheduling.removeAvailability(teacher.id, id);
   }
 
   @Post('teacher/slots:generate')

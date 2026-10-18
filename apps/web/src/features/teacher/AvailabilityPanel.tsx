@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Clock, Info, Loader2, Plus } from 'lucide-react';
+import { Clock, Loader2, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type Session } from '@/api/client';
 import type { AvailabilityRule } from '@/api/types';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,6 +36,7 @@ export function AvailabilityPanel({
   const [rules, setRules] = useState<AvailabilityRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [removingId, setRemovingId] = useState<number | null>(null);
   const [weekday, setWeekday] = useState(1);
 
   const load = useCallback(async () => {
@@ -76,6 +76,28 @@ export function AvailabilityPanel({
     }
   };
 
+  /**
+   * Прибрати годину. Підтвердження немає свідомо: зайняті заняття API не
+   * чіпає, а повернути годину — це той самий рядок форми поруч.
+   */
+  const remove = async (rule: AvailabilityRule) => {
+    setRemovingId(rule.id);
+    try {
+      const res = await api.teacher.removeAvailability(session.token, rule.id);
+      toast.success('Годину прибрано з шаблону', {
+        description:
+          res.slotsRemoved > 0
+            ? `Вільних занять знято з продажу: ${res.slotsRemoved}. Записані лишились.`
+            : 'Вільних занять на цю годину не було',
+      });
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
   return (
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="space-y-4">
@@ -103,8 +125,25 @@ export function AvailabilityPanel({
                 <div key={d} className="flex flex-wrap items-baseline gap-2 border-b pb-3">
                   <span className="w-28 shrink-0 text-sm font-medium">{DOW[d]}</span>
                   {ofDay.map((r) => (
-                    <Badge key={r.id} variant="outline" className="font-mono tabular-nums">
+                    <Badge
+                      key={r.id}
+                      variant="outline"
+                      className="group gap-1 pr-1 font-mono tabular-nums"
+                    >
                       {r.start_time.slice(0, 5)} · {money(r.price_minor)}
+                      <button
+                        type="button"
+                        className="rounded-full p-0.5 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+                        disabled={removingId !== null}
+                        onClick={() => void remove(r)}
+                        aria-label={`Прибрати ${DOW[d]} ${r.start_time.slice(0, 5)} з шаблону`}
+                      >
+                        {removingId === r.id ? (
+                          <Loader2 className="size-3 animate-spin" aria-hidden />
+                        ) : (
+                          <X className="size-3" aria-hidden />
+                        )}
+                      </button>
                     </Badge>
                   ))}
                   <span className="ml-auto text-xs text-muted-foreground">
@@ -188,17 +227,10 @@ export function AvailabilityPanel({
               </Button>
             </form>
 
-            <Alert>
-              <Info aria-hidden />
-              <AlertDescription>
-                Прибрати годину з шаблону поки не можна — у API немає такого маршруту. Повторне
-                додавання тієї самої години перезаписує ціну й тривалість.
-              </AlertDescription>
-            </Alert>
-
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
               <Clock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              Нова година не створює занять сама: натисніть «згенерувати слоти» у вкладці «Розклад».
+              Нова година не створює занять сама: натисніть «згенерувати слоти» у вкладці
+              «Розклад». Та сама година, додана вдруге, перезаписує ціну й тривалість.
             </p>
           </CardContent>
         </Card>

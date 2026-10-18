@@ -137,6 +137,54 @@ export class StudentsRepository {
       .execute();
   }
 
+  /* ---------- секретна адреса календаря ---------- */
+
+  /**
+   * Токен стрічки студента. Створюється при першому зверненні й більше не
+   * змінюється: адреса, яку студент уже вставив у свій календар, мусить
+   * працювати й завтра.
+   *
+   * `where calendar_token is null` усередині UPDATE, а не перевірка в коді —
+   * два одночасні відкриття кабінету інакше випустили б два токени, і той,
+   * що студент встиг скопіювати, перестав би підходити.
+   */
+  async ensureCalendarToken(studentId: number, token: string, tx?: Executor) {
+    await this.db(tx)
+      .updateTable('students')
+      .set({ calendar_token: token })
+      .where('id', '=', studentId)
+      .where('calendar_token', 'is', null)
+      .execute();
+
+    const row = await this.db(tx)
+      .selectFrom('students')
+      .select(['id', 'name', 'timezone', 'calendar_token'])
+      .where('id', '=', studentId)
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  /** Хто власник цієї стрічки. Єдиний спосіб автентифікації для .ics. */
+  async byCalendarToken(token: string, tx?: Executor) {
+    const row = await this.db(tx)
+      .selectFrom('students')
+      .select(['id', 'teacher_id', 'name', 'timezone'])
+      .where('calendar_token', '=', token)
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  /** Відкликати стрічку: стара адреса перестає працювати негайно. */
+  async clearCalendarToken(studentId: number, tx?: Executor) {
+    await this.db(tx)
+      .updateTable('students')
+      .set({ calendar_token: null })
+      .where('id', '=', studentId)
+      .execute();
+  }
+
   async shiftBalance(studentId: number, deltaMinor: number, tx?: Executor) {
     const row = await this.db(tx)
       .updateTable('students')

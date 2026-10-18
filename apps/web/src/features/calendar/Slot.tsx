@@ -1,5 +1,5 @@
 import { type VariantProps } from 'class-variance-authority';
-import { Loader2 } from 'lucide-react';
+import { ArrowLeftRight, Check, Loader2, X } from 'lucide-react';
 import type { SlotView } from '@/api/types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -76,46 +76,49 @@ export function Slot({
     );
   }
 
-  const move = s.action === 'cancel' && onMove && !isPast(slot.startAt, now) && (
-    <Button
-      size={row ? 'sm' : 'xs'}
-      variant="ghost"
-      className={cn(
-        row ? '' : 'w-full',
-        onSolid && 'text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
-      )}
-      disabled={acting}
-      onClick={() => onMove(slot)}
-      aria-label={`Перенести заняття ${time}`}
-    >
-      перенести
-    </Button>
-  );
-
-  const action = s.action && onAct && (
-    <Button
-      size={row ? 'sm' : 'xs'}
-      variant="outline"
-      className={cn(
-        row ? '' : 'mt-1 w-full',
-        // Прозора з обводкою: кнопка не повинна перебивати собою стан слота,
-        // а колір тексту лишає її головною дією в клітинці.
-        s.action === 'book' && 'border-primary/50 bg-transparent text-primary hover:bg-primary/10',
-        onSolid &&
-          'border-slot-paid-fg/40 bg-transparent text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
-      )}
-      disabled={acting}
-      onClick={() => onAct(slot)}
-      aria-label={
-        s.action === 'book' ? `Забронювати заняття ${time}` : `Скасувати заняття ${time}`
-      }
-    >
-      {acting && <Loader2 className="animate-spin" aria-hidden />}
-      {s.action === 'book' ? 'Забронювати' : 'Скасувати'}
-    </Button>
-  );
+  const canMove = s.action === 'cancel' && onMove && !isPast(slot.startAt, now);
 
   if (row) {
+    /*
+     * Вузький екран: кнопки стоять у рядку підписами назовні. Наведення тут
+     * показувати нічого не може — пальцем не наводять, — тому приховані дії
+     * лишаються тільки в сітці.
+     */
+    const move = canMove && (
+      <Button
+        size="sm"
+        variant="ghost"
+        className={cn(
+          onSolid && 'text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
+        )}
+        disabled={acting}
+        onClick={() => onMove(slot)}
+        aria-label={`Перенести заняття ${time}`}
+      >
+        перенести
+      </Button>
+    );
+
+    const action = s.action && onAct && (
+      <Button
+        size="sm"
+        variant="outline"
+        className={cn(
+          s.action === 'book' && 'border-primary/50 bg-transparent text-primary hover:bg-primary/10',
+          onSolid &&
+            'border-slot-paid-fg/40 bg-transparent text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
+        )}
+        disabled={acting}
+        onClick={() => onAct(slot)}
+        aria-label={
+          s.action === 'book' ? `Забронювати заняття ${time}` : `Скасувати заняття ${time}`
+        }
+      >
+        {acting && <Loader2 className="animate-spin" aria-hidden />}
+        {s.action === 'book' ? 'Забронювати' : 'Скасувати'}
+      </Button>
+    );
+
     return (
       <div className={cn(slotBox({ variant: s.variant, shape }))} title={s.hint}>
         <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
@@ -135,8 +138,55 @@ export function Slot({
     );
   }
 
+  /*
+   * Сітка. Дії тут винесені НАД карткою — абсолютним шаром, що проявляється
+   * при наведенні або фокусі.
+   *
+   * Річ не в красі: кнопка в потоці робила клітинку із заняттям вищою за
+   * сусідні, а рядок сітки тягнеться за найвищою клітинкою. Одне оплачене
+   * заняття розпирало весь тиждень, і сітка читалася як набір кнопок замість
+   * розкладу. Поза потоком висота клітинки залежить лише від стану, тож усі
+   * вони однакові.
+   *
+   * Підписи не зникли, а переїхали в `aria-label` і `title`: з клавіатури й
+   * для зчитувача дія лишається названою словами, а `group-focus-within`
+   * проявляє шар, щойно кнопка отримала фокус.
+   */
+  const iconButton = (
+    kind: 'cancel' | 'book' | 'move',
+    label: string,
+    Glyph: typeof X,
+    onClick: () => void,
+  ) => (
+    <Button
+      key={kind}
+      size="icon-xs"
+      variant={kind === 'move' ? 'ghost' : 'outline'}
+      className={cn(
+        'bg-background/80 backdrop-blur-[1px]',
+        kind === 'book' && 'border-primary/50 text-primary hover:bg-primary/10',
+        onSolid &&
+          'border-slot-paid-fg/40 bg-slot-paid/80 text-slot-paid-fg hover:bg-slot-paid-fg/15 hover:text-slot-paid-fg',
+      )}
+      disabled={acting}
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+    >
+      {acting ? <Loader2 className="animate-spin" aria-hidden /> : <Glyph aria-hidden />}
+    </Button>
+  );
+
+  const actions = [
+    canMove && iconButton('move', `Перенести заняття ${time}`, ArrowLeftRight, () => onMove(slot)),
+    s.action === 'book' && onAct
+      && iconButton('book', `Забронювати заняття ${time}`, Check, () => onAct(slot)),
+    s.action === 'cancel' && onAct
+      && iconButton('cancel', `Скасувати заняття ${time}`, X, () => onAct(slot)),
+  ].filter(Boolean);
+
   return (
-    <div className={cn(slotBox({ variant: s.variant, shape }))} title={s.hint}>
+    <div className={cn(slotBox({ variant: s.variant, shape }), 'group')} title={s.hint}>
       <div className="flex items-center gap-1">
         <Icon className="size-3.5 shrink-0 opacity-80" aria-hidden />
         <span className="font-mono text-sm font-medium tabular-nums">{time}</span>
@@ -147,8 +197,20 @@ export function Slot({
           до {dateTimeLabel(slot.payBy, tz)}
         </span>
       )}
-      {action}
-      {move}
+
+      {actions.length > 0 && (
+        <div
+          className={cn(
+            'absolute top-1 right-1 flex items-center gap-0.5',
+            // Доки запрос у дорозі, шар лишається видимим: інакше крутилка
+            // зникала б разом з курсором, і дія виглядала б як ніщо.
+            'opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+            acting && 'opacity-100',
+          )}
+        >
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

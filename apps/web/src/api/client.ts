@@ -156,6 +156,15 @@ export const api = {
     options: (t: string) => request<{ enabled: boolean }>('/payments/options', t),
   },
 
+  /**
+   * Стрічка `.ics` студента: своя адреса зі своїм секретом, а не спільна з
+   * викладачем. GET її ж і створює при першому зверненні.
+   */
+  calendarLink: (t: string) => request<CalendarLink>('/student/calendar-link', t),
+
+  revokeCalendarLink: (t: string) =>
+    request<{ revoked: boolean }>('/student/calendar-link', t, { method: 'DELETE' }),
+
   /** Канал нагадувань. Привʼязка чату — дія студента над власним профілем. */
   telegram: {
     state: (t: string) => request<TelegramState>('/me/telegram', t),
@@ -240,6 +249,12 @@ export const api = {
       request<AvailabilityRule>('/teacher/availability', t, {
         method: 'POST',
         body: JSON.stringify(r),
+      }),
+
+    /** Прибрати годину: майбутні вільні слоти цієї години зникають разом із нею. */
+    removeAvailability: (t: string, id: number) =>
+      request<{ id: number; slotsRemoved: number }>(`/teacher/availability/${id}`, t, {
+        method: 'DELETE',
       }),
 
     paymentConnection: (t: string) =>

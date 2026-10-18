@@ -44,6 +44,30 @@ export class AvailabilityRepository {
       .execute();
   }
 
+  /**
+   * Прибрати годину з шаблону.
+   *
+   * `is_active = false`, а не DELETE: рядок — це ще й історія того, чому слоти
+   * колись згенерувались такими. Повторне додавання тієї самої години вмикає
+   * його назад (`upsertRule` ставить `is_active: true` на конфлікті), тому
+   * «прибрати й повернути» не плодить дублікатів.
+   *
+   * Викладач у WHERE, а не перевіркою в коді: інакше між читанням і записом
+   * лишалося б вікно, у яке чуже правило можна вимкнути.
+   */
+  async deactivateRule(ruleId: number, teacherId: number, tx?: Executor) {
+    const row = await this.db(tx)
+      .updateTable('availability_rules')
+      .set({ is_active: false })
+      .where('id', '=', ruleId)
+      .where('teacher_id', '=', teacherId)
+      .where('is_active', '=', true)
+      .returning(['id', 'weekday', 'start_time'])
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
   async createEnrollment(
     studentId: number,
     e: { weekday: number; startTime: string },

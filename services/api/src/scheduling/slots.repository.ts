@@ -278,6 +278,31 @@ export class SlotsRepository {
     return row ?? null;
   }
 
+  /**
+   * Повернути оплачене заняття в неоплачене — КОМПЕНСАЦІЯ.
+   *
+   * Потрібна лише там, де списання коштів відбувається не в тій самій
+   * транзакції, що захоплення слота: сусідній сервіс міг відмовити, бо балансу
+   * щойно не стало, і тоді заняття мусить повернутись у стан «місце тримається,
+   * лишилось заплатити» — той самий, у який воно стало б одразу, якби про брак
+   * коштів було відомо вчасно.
+   *
+   * Умова `status = 'booked'` усередині UPDATE — та сама ідея, що в усіх
+   * переходах: компенсація ідемпотентна, і повторна спроба не зачепить
+   * заняття, яке студент за цей час уже скасував.
+   */
+  async downgradeToPreBooked(slotId: number, holdExpiresAt: Date, tx?: Executor) {
+    const row = await this.db(tx)
+      .updateTable('slots')
+      .set({ status: 'pre_booked', paid_at: null, hold_expires_at: holdExpiresAt })
+      .where('id', '=', slotId)
+      .where('status', '=', 'booked')
+      .returning(['id', 'student_id', 'status'])
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
   /** Звільнити прострочені закріплення. Фонова задача з лабораторної 2. */
   async expireHolds(now: Date, tx?: Executor) {
     const rows = await this.db(tx)

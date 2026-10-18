@@ -3,6 +3,7 @@ import { DatabaseModule } from './db/database.module.js';
 import { EventsModule } from './events/events.module.js';
 import { MaintenanceModule } from './maintenance/maintenance.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { NoopOutboxModule } from './outbox/outbox.module.js';
 
 /**
  * Корінь воркера.
@@ -18,6 +19,9 @@ import { NotificationsModule } from './notifications/notifications.module.js';
  * разом із ними, а не доведеться писати його заново.
  */
 @Module({
-  imports: [DatabaseModule, EventsModule, MaintenanceModule, NotificationsModule],
+  imports: [
+    DatabaseModule, EventsModule, NoopOutboxModule,
+    MaintenanceModule, NotificationsModule,
+  ],
 })
 export class WorkerModule {}

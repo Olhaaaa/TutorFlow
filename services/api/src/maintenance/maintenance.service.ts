@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { config } from '../config.js';
-import { PaymentsRepository } from '../payments/payments.repository.js';
 import { RemindersService } from '../scheduling/reminders.service.js';
 import { SchedulingService } from '../scheduling/scheduling.service.js';
+import { PAYMENTS_EXPIRY, type PaymentsExpiryPort } from './ports.js';
 
 export interface MaintenanceResult {
   /** Закріплення, які не оплатили вчасно: слоти звільнено. */
@@ -39,7 +39,7 @@ export interface MaintenanceResult {
 export class MaintenanceService {
   constructor(
     private readonly scheduling: SchedulingService,
-    private readonly payments: PaymentsRepository,
+    @Inject(PAYMENTS_EXPIRY) private readonly payments: PaymentsExpiryPort,
     private readonly reminders: RemindersService,
   ) {}
 

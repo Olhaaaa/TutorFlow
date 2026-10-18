@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { balanceFrom, minor, shortfall } from '@tutorflow/core';
 import { KYSELY, type Database, type Executor } from '../db/database.module.js';
+import { OUTBOX_FLUSH, type OutboxFlush } from '../outbox/flush.js';
 import { LESSONS_PORT, type LessonsPort } from './ports.js';
 import { StudentsRepository } from './students.repository.js';
 import { type HistoryDirection, TransactionsRepository } from './transactions.repository.js';
@@ -32,6 +33,7 @@ export class BillingService {
     private readonly students: StudentsRepository,
     private readonly transactions: TransactionsRepository,
     @Inject(LESSONS_PORT) private readonly lessons: LessonsPort,
+    @Inject(OUTBOX_FLUSH) private readonly outbox: OutboxFlush,
   ) {}
 
   /** Баланс, історія операцій і скільки лишилось доплатити за закріплені заняття. */
@@ -95,7 +97,15 @@ export class BillingService {
       throw new NotFoundException('студента не знайдено');
     }
 
-    return this.db.transaction().execute(async (tx) => this.credit(tx, studentId, amountMinor, comment));
+    const result = await this.db.transaction().execute(
+      async (tx) => this.credit(tx, studentId, amountMinor, comment),
+    );
+
+    // Кошти зараховані. Якщо закриття неоплачених занять відкладене в журнал
+    // — віднести його розкладу зараз, доки викладач дивиться на відповідь.
+    await this.outbox.flush();
+
+    return result;
   }
 
   /**

@@ -17,6 +17,7 @@ import { TokenCipher } from './token-cipher.js';
 import { TeachersRepository } from '../scheduling/teachers.repository.js';
 import { returnUrl, webhookUrl } from './urls.js';
 import { EventBus } from '../events/event-bus.js';
+import { OUTBOX_FLUSH, type OutboxFlush } from '../outbox/flush.js';
 
 /** Провайдер говорить про рахунок, ми — про гроші. Переклад одним місцем. */
 const STATUS: Record<MonoInvoiceStatus, PaymentStatusColumn> = {
@@ -55,6 +56,7 @@ export class PaymentsService {
     private readonly teachers: TeachersRepository,
     private readonly cipher: TokenCipher,
     private readonly events: EventBus,
+    @Inject(OUTBOX_FLUSH) private readonly outbox: OutboxFlush,
   ) {}
 
   /* ---------- підключення еквайрингу викладачем ---------- */
@@ -293,6 +295,11 @@ export class PaymentsService {
         }
         throw e;
       });
+
+    // Закриття неоплачених занять коштами цього рахунку могло лишитись
+    // завданням у журналі — доставляємо його після коміту, тим самим рядком,
+    // що й у ручному поповненні.
+    await this.outbox.flush();
 
     // Подія публікується ПІСЛЯ коміту й лише якщо кошти справді зарахувала ця
     // спроба. Опублікувати її всередині транзакції означало б пообіцяти факт,

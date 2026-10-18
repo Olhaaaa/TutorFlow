@@ -11,6 +11,8 @@
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/db/database.module.js';
+import { StudentDirectoryAdapter } from '../src/billing/student-directory.adapter.js';
+import { NoopOutboxFlush } from '../src/outbox/flush.js';
 import { ChargeAdapter } from '../src/billing/charge.adapter.js';
 import { StudentsRepository } from '../src/billing/students.repository.js';
 import { TransactionsRepository } from '../src/billing/transactions.repository.js';
@@ -33,6 +35,8 @@ const scheduling = new SchedulingService(
   new ChargeAdapter(students, transactions),
   new EventBus(),
   externalBusy,
+  new StudentDirectoryAdapter(students),
+  new NoopOutboxFlush(),
 );
 
 const START = new Date('2027-07-10T13:00:00Z');

@@ -11,6 +11,7 @@ import {
 import { config } from '../config.js';
 import { KYSELY, type Database, type Executor } from '../db/database.module.js';
 import { EventBus } from '../events/event-bus.js';
+import { OUTBOX_FLUSH, type OutboxFlush } from '../outbox/flush.js';
 import { AvailabilityRepository } from './availability.repository.js';
 import { ExternalBusyRepository } from './external-busy.repository.js';
 import { buildCalendar, type CalendarEvent } from './ics.js';
@@ -38,6 +39,7 @@ export class SchedulingService {
     private readonly events: EventBus,
     private readonly externalBusy: ExternalBusyRepository,
     @Inject(STUDENT_DIRECTORY) private readonly students: StudentDirectoryPort,
+    @Inject(OUTBOX_FLUSH) private readonly outbox: OutboxFlush,
   ) {}
 
   /**
@@ -164,7 +166,7 @@ export class SchedulingService {
 
     const wasPaid = from.status === 'booked';
 
-    return this.db.transaction().execute(async (tx) => {
+    const result = await this.db.transaction().execute(async (tx) => {
       const released = await this.slots.transition(slotId, from.status, 'free', tx);
       if (!released) throw new ConflictException('стан заняття щойно змінився');
 
@@ -195,6 +197,12 @@ export class SchedulingService {
         payBy: claimed.hold_expires_at ? new Date(claimed.hold_expires_at).toISOString() : null,
       };
     });
+
+    // Повернення за старий слот і списання за новий — два рядки журналу, і
+    // доставити їх треба саме в цьому порядку, інакше між ними зʼявиться мить
+    // з боргом, якого насправді немає.
+    await this.outbox.flush();
+    return result;
   }
 
   /* ---------- зайнятість поза розкладом і стрічка календаря ---------- */
@@ -372,7 +380,7 @@ export class SchedulingService {
     const teacher = await this.teachers.byId(slot.teacher_id);
     if (!teacher) throw new NotFoundException('викладача не знайдено');
 
-    return this.db.transaction().execute(async (tx) => {
+    const result = await this.db.transaction().execute(async (tx) => {
       const affordable = await this.charge.isAffordable(tx, student.id, slot.price_minor);
 
       const claimed = affordable
@@ -400,6 +408,14 @@ export class SchedulingService {
         payBy: claimed.hold_expires_at ? new Date(claimed.hold_expires_at).toISOString() : null,
       };
     });
+
+    // Слот захоплений і зафіксований. Якщо списання за нього відкладене в
+    // журнал, зараз саме той момент, коли його треба віднести сусідові: у
+    // моноліті рядок нічого не робить, бо кошти вже списані тією самою
+    // транзакцією.
+    await this.outbox.flush();
+
+    return result;
   }
 
   /**
@@ -430,7 +446,7 @@ export class SchedulingService {
 
     const wasPaid = slot.status === 'booked';
 
-    return this.db.transaction().execute(async (tx) => {
+    const result = await this.db.transaction().execute(async (tx) => {
       const moved = await this.slots.transition(slotId, slot.status, outcome, tx);
       if (!moved) throw new ConflictException('стан слота щойно змінився');
 
@@ -441,6 +457,9 @@ export class SchedulingService {
 
       return { id: moved.id, status: moved.status, refunded: outcome === 'free' && wasPaid };
     });
+
+    await this.outbox.flush();
+    return result;
   }
 
   /**
@@ -498,6 +517,8 @@ export class SchedulingService {
         refundedMinor: outcome.refund ? slot.price_minor : 0,
       };
     });
+
+    await this.outbox.flush();
 
     // Скасування — єдина операція, про яку студент НЕ дізнається сам: заняття
     // просто зникає з його сітки. Подія публікується після коміту, бо описує
@@ -627,6 +648,37 @@ export class SchedulingService {
     }
 
     return converted;
+  }
+
+  /**
+   * КОМПЕНСАЦІЯ невдалого списання.
+   *
+   * Викликається лише тоді, коли списання за заняття пішло в сусідній сервіс
+   * окремим кроком і той відмовив назавжди — коштів на балансі не виявилось.
+   * У моноліті цього методу не кликав би ніхто: там захоплення слота й
+   * списання — одна транзакція, і «слот оплачений, а гроші не списані» не
+   * існує як стан.
+   *
+   * Повертаємо заняття в `pre_booked` зі строком оплати, тобто в той самий
+   * стан, у який воно стало б одразу, якби про брак коштів було відомо на
+   * початку. Студент не втрачає місця — він лишається з обовʼязком заплатити.
+   *
+   * Ідемпотентно: умова на поточний стан стоїть у самому UPDATE, тому повтор
+   * не зачепить заняття, яке за цей час уже скасували.
+   */
+  async revertFailedCharge(slotId: number): Promise<boolean> {
+    const slot = await this.slots.byId(slotId);
+    if (!slot || slot.status !== 'booked') return false;
+
+    const teacher = await this.teachers.byId(slot.teacher_id);
+    if (!teacher) throw new NotFoundException('викладача не знайдено');
+
+    const moved = await this.slots.downgradeToPreBooked(
+      slotId,
+      holdDeadline(new Date(slot.start_at), teacher.payment_deadline_hours),
+    );
+
+    return moved !== null;
   }
 
   /** Фонові задачі. У лабораторній 1 викликаються вручну, у лабораторній 2 — воркером. */

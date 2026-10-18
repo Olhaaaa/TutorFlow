@@ -10,6 +10,9 @@
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/db/database.module.js';
+import { ExternalBusyRepository } from '../src/scheduling/external-busy.repository.js';
+import { StudentDirectoryAdapter } from '../src/billing/student-directory.adapter.js';
+import { NoopOutboxFlush } from '../src/outbox/flush.js';
 import { ChargeAdapter } from '../src/billing/charge.adapter.js';
 import { StudentsRepository } from '../src/billing/students.repository.js';
 import { TransactionsRepository } from '../src/billing/transactions.repository.js';
@@ -30,7 +33,12 @@ const charge = new ChargeAdapter(students, transactions);
 // Шина без REDIS_URL вимкнена, тому publish — тиха заглушка: тест перевіряє
 // скасування й повернення коштів, а не доставку подій.
 const events = new EventBus();
-const scheduling = new SchedulingService(db, slots, teachers, availability, charge, events);
+const scheduling = new SchedulingService(
+  db, slots, teachers, availability, charge, events,
+  new ExternalBusyRepository(db),
+  new StudentDirectoryAdapter(students),
+  new NoopOutboxFlush(),
+);
 
 const NOW = new Date('2027-07-01T09:00:00Z');
 const START = new Date('2027-07-10T13:00:00Z');

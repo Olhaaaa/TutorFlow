@@ -13,6 +13,7 @@
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/db/database.module.js';
+import { NoopOutboxFlush } from '../src/outbox/flush.js';
 import { ChargeAdapter } from '../src/billing/charge.adapter.js';
 import { StudentDirectoryAdapter } from '../src/billing/student-directory.adapter.js';
 import { StudentsRepository } from '../src/billing/students.repository.js';
@@ -36,6 +37,7 @@ const scheduling = new SchedulingService(
   new EventBus(),
   new ExternalBusyRepository(db),
   new StudentDirectoryAdapter(students),
+  new NoopOutboxFlush(),
 );
 
 const PRICE = 50_000;

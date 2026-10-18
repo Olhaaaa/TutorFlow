@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { PaymentsExpiryAdapter } from '../payments/expiry.adapter.js';
 import { PaymentsModule } from '../payments/payments.module.js';
 import { SchedulingModule } from '../scheduling/scheduling.module.js';
 import { MaintenanceController } from './maintenance.controller.js';
 import { MaintenanceService } from './maintenance.service.js';
 import { MaintenanceTimer } from './maintenance.timer.js';
+import { PAYMENTS_EXPIRY } from './ports.js';
 
 /**
  * Переходи станів за часом. Модуль не знає ні про HTTP-запрос, ні про
@@ -16,7 +18,12 @@ import { MaintenanceTimer } from './maintenance.timer.js';
 @Module({
   imports: [SchedulingModule, PaymentsModule],
   controllers: [MaintenanceController],
-  providers: [MaintenanceService, MaintenanceTimer],
+  providers: [
+    MaintenanceService,
+    MaintenanceTimer,
+    PaymentsExpiryAdapter,
+    { provide: PAYMENTS_EXPIRY, useExisting: PaymentsExpiryAdapter },
+  ],
   exports: [MaintenanceService],
 })
 export class MaintenanceModule {}

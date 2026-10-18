@@ -154,6 +154,22 @@ export interface ExternalBusyTable {
   created_at: Generated<Timestamp>;
 }
 
+/**
+ * Відкладені доставки сусіднім сервісам. У моноліті таблиця порожня: там
+ * спільна транзакція робить те саме надійніше й без затримки.
+ */
+export interface OutboxTable {
+  id: Generated<number>;
+  kind: string;
+  payload: ColumnType<unknown, string, string>;
+  op_id: string | null;
+  attempts: Generated<number>;
+  next_attempt_at: Generated<Timestamp>;
+  delivered_at: Timestamp | null;
+  last_error: string | null;
+  created_at: Generated<Timestamp>;
+}
+
 export interface DB {
   teachers: TeachersTable;
   students: StudentsTable;
@@ -164,4 +180,5 @@ export interface DB {
   payments: PaymentsTable;
   notifications: NotificationsTable;
   external_busy: ExternalBusyTable;
+  outbox: OutboxTable;
 }

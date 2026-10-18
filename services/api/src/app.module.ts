@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { MaintenanceModule } from './maintenance/maintenance.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { NoopOutboxModule } from './outbox/outbox.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { SchedulingModule } from './scheduling/scheduling.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
@@ -22,6 +23,9 @@ import { TelegramModule } from './telegram/telegram.module.js';
   imports: [
     DatabaseModule,
     EventsModule,
+    // Моноліт нічого не відкладає: межі між сервісами тут немає, і `flush()`
+    // після коміту лишається порожнім викликом.
+    NoopOutboxModule,
     SchedulingModule,
     BillingModule,
     PaymentsModule,

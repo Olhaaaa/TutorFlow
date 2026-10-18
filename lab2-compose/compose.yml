@@ -28,20 +28,28 @@ x-app: &app
     context: ..
     dockerfile: Dockerfile
   image: tutorflow:lab2
+  # Секрети беруться з `.env` У КОРЕНІ репозиторію, і саме через env_file, а не
+  # через підстановку ${…}: compose читає `.env` не з кореня, а з каталогу
+  # compose-файла, тобто з lab2-compose/. Підстановка давала порожнє значення,
+  # і канал тихо лишався вимкненим, хоча токен у корені лежав.
+  #
+  # Порядок важливий: те, що нижче в `environment`, ПЕРЕКРИВАЄ env_file. Саме
+  # тому DATABASE_URL із кореня (там localhost) не ламає контейнери — його
+  # перебиває явне значення з іменем сервісу.
+  env_file:
+    - path: ../.env
+      required: false
   environment:
     # Хост — ім'я сервісу: усередині мережі Compose його розводить власний DNS.
     DATABASE_URL: postgres://tutorflow:tutorflow@postgres:5432/tutorflow
     JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
     TEACHER_TIMEZONE: ${TEACHER_TIMEZONE:-Europe/Kyiv}
-    # Підставляються з .env у корені, якщо вони там є. Без PAYMENT_TOKEN_KEY
-    # працює все, крім підключення еквайрингу.
-    PAYMENT_TOKEN_KEY: ${PAYMENT_TOKEN_KEY:-}
+    # PAYMENT_TOKEN_KEY і TELEGRAM_BOT_TOKEN не перелічені навмисно: вони
+    # приходять з env_file вище. Якби вони стояли тут із ${…}, порожня
+    # підстановка перекрила б значення з файлу.
     PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
     # Шина подій. Без неї застосунок працює — події просто не публікуються.
     REDIS_URL: redis://redis:6379
-    # Канал нагадувань. Без токена канал вимкнений: нагадування лишаються в
-    # журналі й видно їх у лозі воркера.
-    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
   depends_on:
     postgres:
       condition: service_healthy
@@ -125,10 +133,9 @@ services:
       DATABASE_URL: postgres://tutorflow:tutorflow@postgres:5432/tutorflow
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
       TEACHER_TIMEZONE: ${TEACHER_TIMEZONE:-Europe/Kyiv}
-      PAYMENT_TOKEN_KEY: ${PAYMENT_TOKEN_KEY:-}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
       REDIS_URL: redis://redis:6379
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # PAYMENT_TOKEN_KEY і TELEGRAM_BOT_TOKEN — з env_file, див. x-app.
       # Єдиний процес, який тепер має таймер. В api це значення не задається
       # взагалі — переходи там більше не живуть.
       MAINTENANCE_INTERVAL_SEC: ${MAINTENANCE_INTERVAL_SEC:-60}

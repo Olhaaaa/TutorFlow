@@ -6,7 +6,7 @@ import { KYSELY, type Database } from '../db/database.module.js';
 import { SchedulingService } from '../scheduling/scheduling.service.js';
 import { SlotsRepository, type Executor } from '../scheduling/slots.repository.js';
 import { StudentsRepository } from './students.repository.js';
-import { TransactionsRepository } from './transactions.repository.js';
+import { type HistoryDirection, TransactionsRepository } from './transactions.repository.js';
 
 /**
  * Драйвер pg віддає timestamptz як Date, але Kysely описує колонку через
@@ -14,6 +14,19 @@ import { TransactionsRepository } from './transactions.repository.js';
  * замість приведення в кожному місці.
  */
 const iso = (v: unknown): string => new Date(v as string | number | Date).toISOString();
+
+/** Рядок журналу у вигляді, придатному для клієнта. Один на всі відповіді з історією. */
+const toHistoryItem = (t: {
+  id: number; amount_minor: number; kind: string;
+  slot_id: number | null; comment: string | null; created_at: unknown;
+}) => ({
+  id: t.id,
+  amountMinor: t.amount_minor,
+  kind: t.kind,
+  slotId: t.slot_id,
+  comment: t.comment,
+  at: iso(t.created_at),
+});
 
 @Injectable()
 export class BillingService {
@@ -47,15 +60,22 @@ export class BillingService {
         startAt: iso(p.start_at),
         priceMinor: p.price_minor,
       })),
-      history: history.map((t) => ({
-        id: t.id,
-        amountMinor: t.amount_minor,
-        kind: t.kind,
-        slotId: t.slot_id,
-        comment: t.comment,
-        at: iso(t.created_at),
-      })),
+      history: history.map(toHistoryItem),
     };
+  }
+
+  /**
+   * Історія операцій окремо від балансу — щоб фільтр напрямку доходив до
+   * запросу.
+   *
+   * Чому не параметром до `/balance`: баланс тягнеться на кожному відкритті
+   * кабінету, а перемикач напрямку чіпає лише один список на картці. Змішати
+   * їх означало б перечитувати борг і неоплачені заняття щоразу, коли студент
+   * натиснув «поповнення».
+   */
+  async history(studentId: number, direction: HistoryDirection = 'all') {
+    const rows = await this.transactions.recent(studentId, { direction });
+    return rows.map(toHistoryItem);
   }
 
   listStudents(teacherId: number) {
@@ -118,13 +138,20 @@ export class BillingService {
   /**
    * Звірка кешованого балансу із сумою транзакцій.
    * Якщо вони розійшлись — у коді є помилка, і краще дізнатись про неї тут.
+   *
+   * Викладач передається обовʼязково, як у topup: ідентифікатор студента
+   * приходить зі шляху, тому без перевірки власності маршрут віддавав би
+   * баланс будь-якого студента системи кожному, хто перебирає числа.
+   * Чужий студент — 404, а не 403: наявність чужого рядка теж не наше діло.
    */
-  async audit(studentId: number) {
+  async audit(teacherId: number, studentId: number) {
     const [student, sum] = await Promise.all([
       this.students.byId(studentId),
       this.transactions.sum(studentId),
     ]);
-    if (!student) throw new NotFoundException('студента не знайдено');
+    if (!student || student.teacher_id !== teacherId) {
+      throw new NotFoundException('студента не знайдено');
+    }
 
     const fromJournal = balanceFrom([{ amountMinor: minor(sum) }]);
     return {

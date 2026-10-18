@@ -80,14 +80,19 @@ async function request<T>(path: string, token: string | null, init: RequestInit 
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
 
+export interface Transaction {
+  id: number; amountMinor: number; kind: string;
+  slotId: number | null; comment: string | null; at: string;
+}
+
+/** Напрямок руху коштів у фільтрі історії. Дзеркало серверного типу. */
+export type HistoryDirection = 'all' | 'in' | 'out';
+
 export interface Balance {
   balanceMinor: number;
   dueMinor: number;
   unpaid: { slotId: number; startAt: string; priceMinor: number }[];
-  history: {
-    id: number; amountMinor: number; kind: string;
-    slotId: number | null; comment: string | null; at: string;
-  }[];
+  history: Transaction[];
 }
 
 export const api = {
@@ -125,6 +130,14 @@ export const api = {
     }),
 
   balance: (t: string) => request<Balance>('/balance', t),
+
+  /**
+   * Історія з фільтром напрямку. Окремий запрос, а не фільтрація вже
+   * отриманого `balance.history`: вікно на сервері обмежене, і поповнення
+   * може не потрапити до нього взагалі — тоді фільтрувати локально нічого.
+   */
+  history: (t: string, direction: HistoryDirection) =>
+    request<Transaction[]>(`/balance/history?direction=${direction}`, t),
 
   /**
    * Оплата карткою. Баланс змінює НЕ ця пара маршрутів, а вебхук провайдера:

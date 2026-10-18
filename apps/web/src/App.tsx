@@ -237,7 +237,7 @@ export function App() {
               </div>
               {balance && (
                 <div className="space-y-4 xl:sticky xl:top-20">
-                  <BalanceCard balance={balance} tz={tz} />
+                  <BalanceCard balance={balance} tz={tz} session={session} />
                   <TopupCard session={session} />
                   <TimezoneCard session={session} onChange={changeTimezone} />
                   <TelegramCard session={session} />

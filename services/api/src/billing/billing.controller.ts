@@ -1,10 +1,10 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { hash } from '@node-rs/bcrypt';
 import { CurrentStudent, CurrentTeacher } from '../auth/current-user.decorator.js';
 import type { StudentContext } from '../scheduling/scheduling.service.js';
 import { BillingService } from './billing.service.js';
-import { CreateStudentDto, TopupDto } from './dto.js';
+import { CreateStudentDto, HistoryQueryDto, TopupDto } from './dto.js';
 
 @ApiTags('Гроші')
 @Controller()
@@ -18,6 +18,22 @@ export class BillingController {
   })
   balance(@CurrentStudent() student: StudentContext) {
     return this.billing.balance(student.id);
+  }
+
+  @Get('balance/history')
+  @ApiOperation({
+    summary: 'Історія операцій студента',
+    description:
+      'Те саме, що `history` у балансі, але з фільтром напрямку: `in` — '
+      + 'надходження (поповнення, повернення), `out` — списання. Фільтр іде в '
+      + 'запрос, тому поповнення знаходиться й тоді, коли останні двадцять '
+      + 'операцій — самі лише заняття.',
+  })
+  history(
+    @CurrentStudent() student: StudentContext,
+    @Query() query: HistoryQueryDto,
+  ) {
+    return this.billing.history(student.id, query.direction ?? 'all');
   }
 
   @Get('teacher/students')
@@ -63,7 +79,11 @@ export class BillingController {
     summary: 'Звірка балансу з журналом',
     description: 'Кешований баланс проти суми транзакцій. Розбіжність означає помилку в коді.',
   })
-  audit(@Param('id', ParseIntPipe) studentId: number) {
-    return this.billing.audit(studentId);
+  @ApiResponse({ status: 404, description: 'студента в цього викладача немає' })
+  audit(
+    @Param('id', ParseIntPipe) studentId: number,
+    @CurrentTeacher() teacher: { id: number },
+  ) {
+    return this.billing.audit(teacher.id, studentId);
   }
 }

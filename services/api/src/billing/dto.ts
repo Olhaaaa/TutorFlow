@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
+import { IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateStudentDto {
@@ -28,4 +28,14 @@ export class TopupDto {
   @ApiPropertyOptional({ example: 'оплата за 4 заняття' })
   @IsOptional() @IsString() @Length(0, 300)
   comment?: string;
+}
+
+export class HistoryQueryDto {
+  /**
+   * Напрямок руху коштів. `all` стандартно, тому адреса без параметра
+   * поводиться рівно так, як поводилась історія всередині `/balance`.
+   */
+  @ApiPropertyOptional({ enum: ['all', 'in', 'out'], default: 'all' })
+  @IsOptional() @IsIn(['all', 'in', 'out'])
+  direction?: 'all' | 'in' | 'out';
 }

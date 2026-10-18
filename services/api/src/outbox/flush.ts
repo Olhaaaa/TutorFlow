@@ -32,3 +32,16 @@ export class NoopOutboxFlush implements OutboxFlush {
     /* навмисно порожньо — див. коментар до OutboxFlush */
   }
 }
+
+/**
+ * Розсилка факту про нового студента в МОНОЛІТІ: розсилати нікому.
+ *
+ * Вхід і нагадування читають ту саму таблицю `students`, тому рядок,
+ * створений білінгом, видно їм у ту ж мить.
+ */
+@Injectable()
+export class NoopNewStudentSink {
+  async created(): Promise<void> {
+    /* навмисно порожньо: у моноліті таблиця одна */
+  }
+}

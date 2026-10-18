@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
-import { NoopOutboxFlush, OUTBOX_FLUSH } from './flush.js';
+import { NEW_STUDENT_SINK } from '../billing/ports.js';
+import { NoopNewStudentSink, NoopOutboxFlush, OUTBOX_FLUSH } from './flush.js';
 
 /**
  * Межа доставки в МОНОЛІТІ: її немає.
@@ -14,7 +15,10 @@ import { NoopOutboxFlush, OUTBOX_FLUSH } from './flush.js';
  */
 @Global()
 @Module({
-  providers: [{ provide: OUTBOX_FLUSH, useClass: NoopOutboxFlush }],
-  exports: [OUTBOX_FLUSH],
+  providers: [
+    { provide: OUTBOX_FLUSH, useClass: NoopOutboxFlush },
+    { provide: NEW_STUDENT_SINK, useClass: NoopNewStudentSink },
+  ],
+  exports: [OUTBOX_FLUSH, NEW_STUDENT_SINK],
 })
 export class NoopOutboxModule {}

@@ -6,6 +6,7 @@ import { BillingController } from './billing.controller.js';
 import { BillingService } from './billing.service.js';
 import { ChargeAdapter } from './charge.adapter.js';
 import { StudentDirectoryAdapter } from './student-directory.adapter.js';
+import { TransfersService } from './transfers.service.js';
 import { StudentsRepository } from './students.repository.js';
 import { TransactionsRepository } from './transactions.repository.js';
 
@@ -33,9 +34,10 @@ import { TransactionsRepository } from './transactions.repository.js';
     { provide: CHARGE_PORT, useExisting: ChargeAdapter },
     StudentDirectoryAdapter,
     { provide: STUDENT_DIRECTORY, useExisting: StudentDirectoryAdapter },
+    TransfersService,
   ],
   exports: [
-    BillingService, CHARGE_PORT, STUDENT_DIRECTORY,
+    BillingService, TransfersService, CHARGE_PORT, STUDENT_DIRECTORY,
     StudentsRepository, TransactionsRepository,
   ],
 })

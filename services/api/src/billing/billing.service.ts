@@ -2,7 +2,9 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { balanceFrom, minor, shortfall } from '@tutorflow/core';
 import { KYSELY, type Database, type Executor } from '../db/database.module.js';
 import { OUTBOX_FLUSH, type OutboxFlush } from '../outbox/flush.js';
-import { LESSONS_PORT, type LessonsPort } from './ports.js';
+import {
+  LESSONS_PORT, NEW_STUDENT_SINK, type LessonsPort, type NewStudentSink,
+} from './ports.js';
 import { StudentsRepository } from './students.repository.js';
 import { type HistoryDirection, TransactionsRepository } from './transactions.repository.js';
 
@@ -34,6 +36,7 @@ export class BillingService {
     private readonly transactions: TransactionsRepository,
     @Inject(LESSONS_PORT) private readonly lessons: LessonsPort,
     @Inject(OUTBOX_FLUSH) private readonly outbox: OutboxFlush,
+    @Inject(NEW_STUDENT_SINK) private readonly newStudents: NewStudentSink,
   ) {}
 
   /** Баланс, історія операцій і скільки лишилось доплатити за закріплені заняття. */
@@ -75,11 +78,34 @@ export class BillingService {
     return this.students.listByTeacher(teacherId);
   }
 
-  createStudent(
+  /**
+   * Додати студента.
+   *
+   * Транзакція тут не через те, що запросів два, а через те, що той самий
+   * факт потрібен сусідам: увійти студент зможе лише тоді, коли про нього
+   * дізнається сервіс входу. Розсилка пишеться тією самою транзакцією, тому
+   * «студент є, а увійти не може» неможливий як стан. У моноліті розсилка
+   * порожня — таблиця одна й та сама.
+   */
+  async createStudent(
     teacherId: number,
     s: { name: string; email: string; passwordHash: string; timezone: string },
   ) {
-    return this.students.create(teacherId, s);
+    const student = await this.db.transaction().execute(async (tx) => {
+      const created = await this.students.create(teacherId, s, tx);
+      await this.newStudents.created(tx, {
+        id: created.id,
+        teacherId,
+        name: s.name,
+        email: s.email,
+        passwordHash: s.passwordHash,
+        timezone: s.timezone,
+      });
+      return created;
+    });
+
+    await this.outbox.flush();
+    return student;
   }
 
   /**

@@ -90,6 +90,8 @@ export interface TransactionsTable {
   kind: TransactionKindColumn;
   slot_id: number | null;
   comment: string | null;
+  /** Ключ операції: unique у базі не дає застосувати той самий рух двічі. */
+  op_id: string | null;
   /**
    * Розгорнуто, а не Generated<Timestamp>: час проводки іноді задається явно
    * (сідер вносить поповнення заднім числом, щоб журнал читався хронологічно),

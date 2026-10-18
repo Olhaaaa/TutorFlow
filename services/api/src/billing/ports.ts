@@ -37,3 +37,32 @@ export interface LessonsPort {
 }
 
 export const LESSONS_PORT = 'LESSONS_PORT';
+
+/**
+ * КОМУ ЩЕ ПОТРІБЕН ФАКТ «зʼявився студент».
+ *
+ * Створює студента білінг — це його таблиця й його баланс. Але та сама людина
+ * потрібна ще двом сервісам: входу (щоб могла увійти) і нагадуванням (щоб було
+ * куди писати). У моноліті питання не існувало: одна таблиця, один рядок,
+ * видно всім.
+ *
+ * Порт приймає `tx`, і це головне в ньому: розсилка записується ТІЄЮ САМОЮ
+ * транзакцією, що й сам студент. Інакше зʼявився б стан «студент у базі є, а
+ * увійти не може, і ніхто про це не дізнається» — найгірший вид
+ * неузгодженості, бо він тихий.
+ */
+export interface NewStudentSink {
+  created(
+    tx: Executor,
+    student: {
+      id: number;
+      teacherId: number;
+      name: string;
+      email: string;
+      passwordHash: string;
+      timezone: string;
+    },
+  ): Promise<void>;
+}
+
+export const NEW_STUDENT_SINK = 'NEW_STUDENT_SINK';

@@ -17,6 +17,14 @@ export class TransactionsRepository {
 
   private db(tx?: Executor): Executor { return tx ?? this.root; }
 
+  /**
+   * Записати проводку.
+   *
+   * `opId` — ключ ІДЕМПОТЕНТНОСТІ, і він потрібен лише там, де рух коштів
+   * приходить із сусіднього сервіса: доставка at-least-once означає, що те
+   * саме списання прийде двічі. У моноліті ключа немає — там рух коштів іде
+   * в одній транзакції зі зміною слота й повторитись не може.
+   */
   async add(
     t: {
       studentId: number;
@@ -24,6 +32,7 @@ export class TransactionsRepository {
       kind: TransactionKindColumn;
       slotId?: number | null;
       comment?: string | null;
+      opId?: string | null;
     },
     tx?: Executor,
   ) {
@@ -35,9 +44,27 @@ export class TransactionsRepository {
         kind: t.kind,
         slot_id: t.slotId ?? null,
         comment: t.comment ?? null,
+        op_id: t.opId ?? null,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  /**
+   * Чи вже застосована операція з таким ключем.
+   *
+   * Перевірка потрібна не замість унікального індексу, а ПЕРЕД ним: вона
+   * дозволяє відповісти «це повтор» без помилки бази в лозі. Гарантію дає
+   * однаково індекс — на двох одночасних спробах перевірка не спрацює.
+   */
+  async byOpId(opId: string, tx?: Executor) {
+    const row = await this.db(tx)
+      .selectFrom('transactions')
+      .select(['id', 'student_id', 'amount_minor', 'kind'])
+      .where('op_id', '=', opId)
+      .executeTakeFirst();
+
+    return row ?? null;
   }
 
   /**

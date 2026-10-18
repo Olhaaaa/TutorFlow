@@ -33,3 +33,19 @@ import { TokenModule } from './token.module.js';
   exports: [AuthService],
 })
 export class AuthModule {}
+
+/**
+ * Вхід у сервісі IDENTITY.
+ *
+ * Реквізити лежать у ВЛАСНІЙ базі сервіса — у тих самих `teachers` і
+ * `students`, від яких лишились лише колонки входу. Адаптер до них той самий,
+ * що в моноліті: він читає дві таблиці, і тут це вже не порушення межі, бо
+ * обидві його.
+ */
+@Module({
+  imports: [TokenModule],
+  controllers: [AuthController],
+  providers: [AuthService],
+  exports: [AuthService],
+})
+export class AuthCoreModule {}

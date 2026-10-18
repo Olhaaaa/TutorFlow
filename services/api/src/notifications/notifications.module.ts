@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { TelegramModule } from '../telegram/telegram.module.js';
+import { TelegramCoreModule, TelegramModule } from '../telegram/telegram.module.js';
 import { NotificationsConsumer } from './notifications.consumer.js';
 import { NotificationsDelivery } from './notifications.delivery.js';
 import { NotificationsRepository } from './notifications.repository.js';
@@ -17,3 +17,17 @@ import { NotificationsRepository } from './notifications.repository.js';
   exports: [NotificationsRepository, NotificationsDelivery, NotificationsConsumer],
 })
 export class NotificationsModule {}
+
+/**
+ * Нагадування в сервісі NOTIFICATIONS: журнал, доставка й канал.
+ *
+ * Відмінність від монолітного модуля одна: канал тягнеться в тій версії, яка
+ * НЕ залежить від білінгу. Контакти в цьому сервісі свої — проєкція з трьох
+ * колонок, яку наповнює завдання з outbox.
+ */
+@Module({
+  imports: [TelegramCoreModule],
+  providers: [NotificationsRepository, NotificationsDelivery, NotificationsConsumer],
+  exports: [NotificationsRepository, NotificationsDelivery, NotificationsConsumer],
+})
+export class NotificationsCoreModule {}

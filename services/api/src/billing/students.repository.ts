@@ -116,11 +116,17 @@ export class StudentsRepository {
     return this.telegramState(studentId, tx);
   }
 
-  /** Стан каналу: чи привʼязаний чат і який код показувати. */
+  /**
+   * Стан каналу: чи привʼязаний чат і який код показувати.
+   *
+   * Імʼя й зона віддаються тим самим рядком, бо каналу потрібен ПОВНИЙ
+   * контакт — привітатись у чаті він мусить людиною, а не номером. Другий
+   * запрос по те саме був би зайвим і в моноліті, і в мікросервісах.
+   */
   async telegramState(studentId: number, tx?: Executor) {
     const row = await this.db(tx)
       .selectFrom('students')
-      .select(['id', 'telegram_chat_id', 'telegram_link_code'])
+      .select(['id', 'name', 'timezone', 'telegram_chat_id', 'telegram_link_code'])
       .where('id', '=', studentId)
       .executeTakeFirst();
 
@@ -139,7 +145,9 @@ export class StudentsRepository {
       .updateTable('students')
       .set({ telegram_chat_id: Number(chatId), telegram_link_code: null })
       .where('telegram_link_code', '=', code)
-      .returning(['id', 'name', 'teacher_id'])
+      // teacher_id тут не потрібен навмисно: у базі сервіса нагадувань цієї
+      // колонки немає взагалі — вона належить білінгу.
+      .returning(['id', 'name'])
       .executeTakeFirst();
 
     return row ?? null;

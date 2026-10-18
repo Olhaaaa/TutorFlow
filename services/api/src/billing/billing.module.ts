@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { CHARGE_PORT, STUDENT_DIRECTORY } from '../scheduling/ports.js';
+import { LESSONS_PORT } from './ports.js';
 import { SchedulingModule } from '../scheduling/scheduling.module.js';
 import { BillingController } from './billing.controller.js';
 import { BillingService } from './billing.service.js';

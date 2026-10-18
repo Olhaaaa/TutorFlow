@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { StudentsRepository } from '../billing/students.repository.js';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newLinkCode, parseLinkCode } from './link-code.js';
+import { CONTACTS_PORT, type ContactsPort } from './ports.js';
 import { TelegramClient } from './telegram.client.js';
 
 /** Що показати студентові на картці каналу. */
@@ -27,7 +27,7 @@ export class TelegramService {
   private readonly log = new Logger('Telegram');
 
   constructor(
-    private readonly students: StudentsRepository,
+    @Inject(CONTACTS_PORT) private readonly contacts: ContactsPort,
     private readonly client: TelegramClient,
   ) {}
 
@@ -37,8 +37,8 @@ export class TelegramService {
 
   /** Стан каналу для студента. Код створюється, якщо його ще немає. */
   async state(studentId: number): Promise<TelegramState> {
-    const current = await this.students.telegramState(studentId);
-    const linked = current?.telegram_chat_id !== null && current?.telegram_chat_id !== undefined;
+    const current = await this.contacts.contact(studentId);
+    const linked = current !== null && current.telegramChatId !== null;
 
     if (!this.client.enabled) {
       return { available: false, linked, code: null, botUsername: null, deepLink: null };
@@ -55,10 +55,10 @@ export class TelegramService {
       };
     }
 
-    const row = current?.telegram_link_code
+    const row = current?.telegramLinkCode
       ? current
-      : await this.students.ensureLinkCode(studentId, newLinkCode());
-    const code = row?.telegram_link_code ?? null;
+      : await this.contacts.ensureLinkCode(studentId, newLinkCode());
+    const code = row?.telegramLinkCode ?? null;
     const bot = await this.client.botUsername();
 
     return {
@@ -73,7 +73,7 @@ export class TelegramService {
   }
 
   async unlink(studentId: number): Promise<TelegramState> {
-    await this.students.unlinkTelegram(studentId);
+    await this.contacts.unlink(studentId);
     return this.state(studentId);
   }
 
@@ -96,7 +96,7 @@ export class TelegramService {
       return;
     }
 
-    const student = await this.students.linkTelegram(code, chatId);
+    const student = await this.contacts.link(code, chatId);
     if (!student) {
       // Код не підійшов. Не кажемо, чи він узагалі існував: перебирати коди
       // через бота й так безглуздо, але підказувати не варто.
@@ -122,8 +122,8 @@ export class TelegramService {
   async deliver(studentId: number, text: string): Promise<boolean> {
     if (!this.client.enabled) return false;
 
-    const row = await this.students.telegramState(studentId);
-    const chatId = row?.telegram_chat_id;
+    const contact = await this.contacts.contact(studentId);
+    const chatId = contact?.telegramChatId;
     if (chatId === null || chatId === undefined) return false;
 
     // bigint із PostgreSQL драйвер віддає рядком, а не числом: Telegram

@@ -1,10 +1,7 @@
-import {
-  BadRequestException, Inject, Injectable, NotFoundException, forwardRef,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { balanceFrom, minor, shortfall } from '@tutorflow/core';
 import { KYSELY, type Database, type Executor } from '../db/database.module.js';
-import { SchedulingService } from '../scheduling/scheduling.service.js';
-import { SlotsRepository } from '../scheduling/slots.repository.js';
+import { LESSONS_PORT, type LessonsPort } from './ports.js';
 import { StudentsRepository } from './students.repository.js';
 import { type HistoryDirection, TransactionsRepository } from './transactions.repository.js';
 
@@ -34,9 +31,7 @@ export class BillingService {
     @Inject(KYSELY) private readonly db: Database,
     private readonly students: StudentsRepository,
     private readonly transactions: TransactionsRepository,
-    private readonly slots: SlotsRepository,
-    @Inject(forwardRef(() => SchedulingService))
-    private readonly scheduling: SchedulingService,
+    @Inject(LESSONS_PORT) private readonly lessons: LessonsPort,
   ) {}
 
   /** Баланс, історія операцій і скільки лишилось доплатити за закріплені заняття. */
@@ -46,20 +41,16 @@ export class BillingService {
 
     const [history, pending] = await Promise.all([
       this.transactions.recent(studentId),
-      this.slots.pendingPayment(studentId),
+      this.lessons.pendingPayment(studentId),
     ]);
 
     return {
       balanceMinor: student.balance_minor,
       dueMinor: shortfall(
         minor(student.balance_minor),
-        pending.map((p) => minor(p.price_minor)),
+        pending.map((p) => minor(p.priceMinor)),
       ),
-      unpaid: pending.map((p) => ({
-        slotId: p.id,
-        startAt: iso(p.start_at),
-        priceMinor: p.price_minor,
-      })),
+      unpaid: pending,
       history: history.map(toHistoryItem),
     };
   }
@@ -120,7 +111,7 @@ export class BillingService {
       { studentId, amountMinor, kind: 'topup', comment: comment ?? null }, tx,
     );
     await this.students.shiftBalance(studentId, amountMinor, tx);
-    const converted = await this.scheduling.applyPayment(tx, studentId);
+    const converted = await this.lessons.applyPayment(tx, studentId);
 
     // Баланс перечитується ПІСЛЯ конвертації: applyPayment списує кошти за
     // закриті заняття, тому значення, отримане від shiftBalance, застаріває

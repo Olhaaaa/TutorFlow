@@ -13,12 +13,15 @@
 import { NotFoundException } from '@nestjs/common';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { createDatabase } from '../src/db/database.module.js';
+import { ExternalBusyRepository } from '../src/scheduling/external-busy.repository.js';
+import { StudentDirectoryAdapter } from '../src/billing/student-directory.adapter.js';
 import { BillingService } from '../src/billing/billing.service.js';
 import { ChargeAdapter } from '../src/billing/charge.adapter.js';
 import { StudentsRepository } from '../src/billing/students.repository.js';
 import { TransactionsRepository } from '../src/billing/transactions.repository.js';
 import { EventBus } from '../src/events/event-bus.js';
 import { AvailabilityRepository } from '../src/scheduling/availability.repository.js';
+import { LessonsAdapter } from '../src/scheduling/lessons.adapter.js';
 import { SchedulingService } from '../src/scheduling/scheduling.service.js';
 import { SlotsRepository } from '../src/scheduling/slots.repository.js';
 import { TeachersRepository } from '../src/scheduling/teachers.repository.js';
@@ -32,8 +35,14 @@ const availability = new AvailabilityRepository(db);
 const charge = new ChargeAdapter(students, transactions);
 // Шина без REDIS_URL вимкнена: тут перевіряється доступ, а не доставка подій.
 const events = new EventBus();
-const scheduling = new SchedulingService(db, slots, teachers, availability, charge, events);
-const billing = new BillingService(db, students, transactions, slots, scheduling);
+const scheduling = new SchedulingService(
+  db, slots, teachers, availability, charge, events,
+  new ExternalBusyRepository(db),
+  new StudentDirectoryAdapter(students),
+);
+const billing = new BillingService(
+  db, students, transactions, new LessonsAdapter(slots, scheduling),
+);
 
 const PRICE = 50_000;
 const TOPUP = 120_000;

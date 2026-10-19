@@ -47,7 +47,7 @@ pnpm --filter api seed                    # демо-дані
 Далі два процеси в сусідніх терміналах:
 
 ```bash
-pnpm api:dev    # http://localhost:8080, Swagger на /api/docs
+pnpm api:dev    # http://localhost:8080, Swagger на /api/docs; перелік маршрутів — services/api/API.md
 pnpm web:dev    # http://localhost:5173
 ```
 
@@ -176,6 +176,21 @@ API — за прапорцем `MAINTENANCE_IN_API=true` у `render.yaml`. У �
 інакше повернення зі сторінки оплати й вебхук мовчки працюють у режимі «без
 адреси». Задати її можна лише другим заходом: доки сервіс не створений,
 адреси не існує.
+
+## Розгортання в Google Cloud (Terraform + GKE)
+
+Компоуз лаби 2, перенесений у хмару: Cloud SQL замість контейнера postgres,
+GKE замість Docker на ноутбуці, той самий образ. Платформу описує Terraform
+(`infra/terraform`), застосунок викладає Helm (`infra/helm/tutorflow`):
+
+```bash
+cd infra/terraform && terraform init && terraform apply   # раз
+infra/deploy.sh seed                                      # з кореня, перший реліз із демо-даними
+infra/deploy.sh                                           # кожен наступний
+```
+
+Покрокова інструкція, вартість і як усе прибрати — [infra/README.md](infra/README.md);
+чому саме GKE, а не Cloud Run, — [ADR-0016](docs/adr/0016-gcp-deployment.md).
 
 ## Лаба 2: процеси замість одного процесу
 

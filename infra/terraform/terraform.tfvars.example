@@ -1,0 +1,26 @@
+# Скопіювати в terraform.tfvars і вписати свій project_id.
+# terraform.tfvars у git не йде — там можуть лежати токени.
+
+project_id = "tutorflow-123456"
+
+# region = "europe-central2"
+# zone   = "europe-central2-a"
+
+# Мікросервіси (лаба 3) додаються сюди ж окремим ключем — той самий кластер і
+# той самий інстанс SQL, свій namespace, свої бази, своя адреса:
+#
+# environments = {
+#   monolith = {
+#     namespace = "tutorflow"
+#     databases = ["tutorflow"]
+#   }
+#   microservices = {
+#     namespace = "tutorflow-ms"
+#     databases = ["scheduling", "billing", "notifications"]
+#   }
+# }
+
+# Свій бот на кожне середовище, від @BotFather. Необов'язково.
+# telegram_bot_tokens = {
+#   monolith = "123456:ABC..."
+# }

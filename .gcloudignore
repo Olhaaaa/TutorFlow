@@ -1,0 +1,14 @@
+# Що НЕ відправляється в Cloud Build (infra/deploy.sh --cloud-build).
+# Без цього файлу gcloud бере .gitignore, але той не знає про infra/ і .git.
+.gcloudignore
+.git
+.gitignore
+node_modules/
+**/node_modules/
+**/dist/
+**/*.tsbuildinfo
+services/api/static/
+.env
+.env.*
+infra/
+docs/

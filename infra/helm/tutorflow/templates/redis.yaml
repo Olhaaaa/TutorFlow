@@ -1,0 +1,67 @@
+{{- if .Values.redis.enabled }}
+{{/*
+Шина подій — Redis у кластері, а не Memorystore: найменший Memorystore коштує
+~35 $/міс., а тут стрім-буфер на кілька тисяч подій. Конфігурація та сама, що й
+у компоузі лаби 2: appendonly, бо непідтверджені події не можна губити при
+перезапуску. Диск — PVC, тож под переживає переїзд на інший вузол.
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    {{- include "tutorflow.labels" (dict "ctx" . "component" "redis") | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "tutorflow.selector" (dict "ctx" . "component" "redis") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tutorflow.labels" (dict "ctx" . "component" "redis") | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999   # користувач redis в офіційному образі
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.redis.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    {{- include "tutorflow.labels" (dict "ctx" . "component" "redis") | nindent 4 }}
+spec:
+  selector:
+    {{- include "tutorflow.selector" (dict "ctx" . "component" "redis") | nindent 4 }}
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+{{- end }}

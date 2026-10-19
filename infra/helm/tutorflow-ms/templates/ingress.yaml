@@ -1,0 +1,73 @@
+{{- if .Values.ingress.enabled }}
+{{/*
+GKE Ingress = глобальний HTTP(S) Load Balancer. Сертифікат видає і продовжує
+Google (ManagedCertificate) — потрібен лише домен, що вказує на статичну IP.
+Перший випуск займає 15–60 хвилин; до того застосунок доступний по http.
+
+Єдиний бекенд — gateway (ADR-0020): решта сервісів назовні не виставлена
+взагалі, а /internal недосяжний уже тому, що gateway проксіює лише /api.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "ms.labels" (dict "ctx" . "component" "ingress") | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.global-static-ip-name: {{ required "ingress.staticIpName — з виходу terraform" .Values.ingress.staticIpName | quote }}
+    {{- if .Values.ingress.managedCertificate }}
+    networking.gke.io/managed-certificates: {{ include "ms.certName" . }}
+    {{- end }}
+    {{- if .Values.ingress.httpsRedirect }}
+    networking.gke.io/v1beta1.FrontendConfig: {{ .Release.Name }}
+    {{- end }}
+spec:
+  # defaultBackend, а не лише правило з host: так застосунок відповідає й на
+  # голу IP — зручно, поки DNS або сертифікат ще не готові.
+  defaultBackend:
+    service:
+      name: gateway
+      port:
+        name: http
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: gateway
+  labels:
+    {{- include "ms.labels" (dict "ctx" . "component" "ingress") | nindent 4 }}
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /healthz
+    checkIntervalSec: 15
+    timeoutSec: 5
+  # Під час rollout под, що завершується, ще дочитує запити.
+  connectionDraining:
+    drainingTimeoutSec: 30
+{{- if .Values.ingress.managedCertificate }}
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: {{ include "ms.certName" . }}
+  labels:
+    {{- include "ms.labels" (dict "ctx" . "component" "ingress") | nindent 4 }}
+spec:
+  domains:
+    - {{ required "ingress.host — з виходу terraform" .Values.ingress.host | quote }}
+{{- end }}
+{{- if .Values.ingress.httpsRedirect }}
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "ms.labels" (dict "ctx" . "component" "ingress") | nindent 4 }}
+spec:
+  redirectToHttps:
+    enabled: true
+{{- end }}
+{{- end }}

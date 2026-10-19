@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "tutorflow.labels" (dict "ctx" . "component" "config") | nindent 4 }}
+data:
+  NODE_ENV: production
+  TEACHER_TIMEZONE: {{ .Values.app.teacherTimezone | quote }}
+  MAINTENANCE_INTERVAL_SEC: {{ .Values.app.maintenanceIntervalSec | quote }}
+  {{- if .Values.redis.enabled }}
+  REDIS_URL: redis://{{ .Release.Name }}-redis:6379
+  {{- end }}
+  # MAINTENANCE_IN_API навмисно немає: переходи робить воркер (або CronJob),
+  # як у компоузі лаби 2, а не процес API, як на Render.

@@ -1,0 +1,79 @@
+{{- if .Values.migrations.enabled }}
+{{/*
+Хук pre-install/pre-upgrade: схема оновлюється ДО того, як нові поди API почнуть
+її чекати. Якщо міграція впала — helm upgrade падає теж, і старі поди лишаються
+працювати на старій схемі.
+
+Тільки секрет, без ConfigMap чарту: хуки pre-install виконуються раніше за
+звичайні ресурси, тож при першому встановленні ConfigMap ще не існує. Міграціям
+потрібні лише DATABASE_URL і JWT_SECRET — обидва в секреті від Terraform.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migrate
+  labels:
+    {{- include "tutorflow.labels" (dict "ctx" . "component" "migrate") | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "tutorflow.labels" (dict "ctx" . "component" "migrate") | nindent 8 }}
+    spec:
+      {{- include "tutorflow.podSecurity" . | nindent 6 }}
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: {{ include "tutorflow.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "services/api/dist/db/migrate.js", "up"]
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          env:
+            - name: NODE_ENV
+              value: production
+{{- end }}
+{{- if .Values.seed.run }}
+---
+{{/*
+Демо-дані — після install/upgrade, на вже змігрованій схемі.
+
+NODE_ENV=development навмисно, як і в компоузі лаби 2: сідер відмовляється
+працювати в продакшні, і цей запобіжник лишається — знімається лише тут і лише
+коли сідер просять явно (infra/deploy.sh seed). Після сідера підключений
+викладачем токен еквайрингу зникає разом із таблицею teachers.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-seed
+  labels:
+    {{- include "tutorflow.labels" (dict "ctx" . "component" "seed") | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      {{- include "tutorflow.podSecurity" . | nindent 6 }}
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: {{ include "tutorflow.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "services/api/dist/db/seed.js"]
+          {{- include "tutorflow.envFrom" . | nindent 10 }}
+          env:
+            - name: NODE_ENV
+              value: development
+{{- end }}

@@ -40,3 +40,12 @@ CLAUDE.md
 
 # артефакти збірки
 *.tsbuildinfo
+
+# Terraform: стан містить згенеровані секрети (паролі БД, JWT_SECRET),
+# tfvars — токени. Приклад змінних комітиться.
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfvars
+!infra/terraform/*.tfvars.example
+infra/terraform/.terraform.tfstate.lock.info

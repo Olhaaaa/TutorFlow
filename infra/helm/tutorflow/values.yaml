@@ -1,0 +1,77 @@
+# Типові значення. Те, що відоме лише після terraform apply (образ, адреса,
+# ім'я статичної IP), передає infra/deploy.sh через --set.
+
+image:
+  repository: ""   # europe-central2-docker.pkg.dev/<project>/tutorflow/tutorflow
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Створюються Terraform-ом (infra/terraform/cluster.tf), чарт їх лише читає.
+secretName: tutorflow-secrets          # DATABASE_URL, JWT_SECRET, PAYMENT_TOKEN_KEY, TELEGRAM_BOT_TOKEN
+platformConfigMap: tutorflow-platform  # PUBLIC_BASE_URL
+
+app:
+  teacherTimezone: Europe/Kyiv
+  # Інтервал переходів станів у воркері (режим single). У режимі split переходи
+  # робить CronJob, і розклад задається в worker.transitions.schedule.
+  maintenanceIntervalSec: 60
+
+api:
+  replicas: 1
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { memory: 512Mi }
+  # HPA за CPU. Межа зверху важлива не менше за саму HPA: кожен под — це ще
+  # 10 з'єднань до бази (max_connections=100 у Cloud SQL).
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+
+worker:
+  # single — один процес із трьома ролями, як у компоузі лаби 2.
+  # split  — розкладка з ADR-0011 для лаби 4:
+  #            events       Deployment + KEDA ScaledObject за довжиною стріму
+  #            bot          Deployment, рівно 1 репліка
+  #            transitions  CronJob, один прохід і вихід
+  mode: single
+  resources:
+    requests: { cpu: 50m, memory: 192Mi }
+    limits: { memory: 384Mi }
+  events:
+    # 0 теж працює, але лише після того, як група споживачів уже існує в Redis:
+    # її створює перший запущений споживач. Тому за замовчуванням — 1.
+    minReplicas: 1
+    maxReplicas: 5
+    # Скільки непрочитаних групою подій припадає на одну репліку.
+    lagPerReplica: 20
+  transitions:
+    schedule: "*/2 * * * *"
+
+redis:
+  enabled: true
+  image: redis:8-alpine
+  storage: 1Gi
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+# Міграції — хук перед кожним install/upgrade. Окремий Job, а не старт
+# застосунку: кілька подів API мігрували б навперебій.
+migrations:
+  enabled: true
+
+# Демо-дані. Сідер робить TRUNCATE, тому вмикається лише явно:
+#   infra/deploy.sh seed
+seed:
+  run: false
+
+ingress:
+  enabled: true
+  host: ""            # <ip-через-дефіси>.sslip.io або свій домен — з виходу Terraform
+  staticIpName: ""    # tutorflow-monolith-ip — з виходу Terraform
+  managedCertificate: true
+  # Перенаправлення http → https. Вмикати, коли сертифікат уже Active
+  # (kubectl describe managedcertificate): до того https ще не відповідає.
+  httpsRedirect: false

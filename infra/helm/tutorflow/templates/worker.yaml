@@ -1,0 +1,79 @@
+{{- if eq .Values.worker.mode "single" }}
+{{/* Лаба 2: один процес, усі три ролі. Порожній WORKER_ROLES — усі. */}}
+{{ include "tutorflow.worker" (dict "ctx" . "component" "worker" "roles" "" "replicas" 1) }}
+
+{{- else if eq .Values.worker.mode "split" }}
+{{/* Лаба 4, ADR-0011. Кількість реплік events веде KEDA, тому replicas не задається. */}}
+{{ include "tutorflow.worker" (dict "ctx" . "component" "worker-events" "roles" "events") }}
+---
+{{ include "tutorflow.worker" (dict "ctx" . "component" "worker-bot" "roles" "bot" "replicas" 1) }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Release.Name }}-worker-events
+  labels:
+    {{- include "tutorflow.labels" (dict "ctx" . "component" "worker-events") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ .Release.Name }}-worker-events
+  minReplicaCount: {{ .Values.worker.events.minReplicas }}
+  maxReplicaCount: {{ .Values.worker.events.maxReplicas }}
+  pollingInterval: 15
+  # Скільки чекати після спаду, перш ніж прибирати репліки: інакше хвиля подій
+  # кожні кілька хвилин гасила й піднімала поди без кінця.
+  cooldownPeriod: 120
+  triggers:
+    # lag — скільки подій у стрімі група ще не отримала (XINFO GROUPS, Redis 7+).
+    # Саме він, а не PEL: у PEL лежить лише те, що вже видано споживачам, тож
+    # при нулі реплік PEL порожній, хоч подій повно.
+    - type: redis-streams
+      metadata:
+        address: {{ .Release.Name }}-redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+        stream: tutorflow.events
+        consumerGroup: notifications
+        lagCount: {{ .Values.worker.events.lagPerReplica | quote }}
+        activationLagCount: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-transitions
+  labels:
+    {{- include "tutorflow.labels" (dict "ctx" . "component" "transitions") | nindent 4 }}
+spec:
+  schedule: {{ .Values.worker.transitions.schedule | quote }}
+  # Два проходи одночасно не зіпсують дані (переходи ідемпотентні), але й
+  # користі з другого нуль.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            {{- include "tutorflow.labels" (dict "ctx" . "component" "transitions") | nindent 12 }}
+        spec:
+          {{- include "tutorflow.podSecurity" . | nindent 10 }}
+          restartPolicy: Never
+          containers:
+            - name: transitions
+              image: {{ include "tutorflow.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["node", "services/api/dist/worker.js"]
+              {{- include "tutorflow.envFrom" . | nindent 14 }}
+              env:
+                - name: WORKER_ROLES
+                  value: transitions
+                # Нуль — «один прохід і вийти»: розкладом керує CronJob.
+                - name: MAINTENANCE_INTERVAL_SEC
+                  value: "0"
+              resources:
+                {{- toYaml .Values.worker.resources | nindent 16 }}
+
+{{- else }}
+{{- fail (printf "worker.mode: очікується single або split, отримано %q" .Values.worker.mode) }}
+{{- end }}

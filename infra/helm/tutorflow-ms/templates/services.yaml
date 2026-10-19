@@ -1,0 +1,14 @@
+{{/*
+Чотири сервіси з власною базою. Порядок ітерації за ключем стабільний, тож
+маніфести не перемішуються між релізами.
+*/}}
+{{- range $name, $svc := .Values.services }}
+{{ include "ms.httpService" (dict "ctx" $ "name" $name "database" $svc.database "autoscaling" $svc.autoscaling "resources" $.Values.serviceResources) }}
+---
+{{- end }}
+{{/*
+Gateway — без власної бази й без домену: маршрутизація за префіксом і SPA.
+DATABASE_URL він отримує із секрету (перша база середовища) лише тому, що
+спільний config.ts вимагає її на старті; з'єднання з базою gateway не відкриває.
+*/}}
+{{ include "ms.httpService" (dict "ctx" $ "name" "gateway" "database" "" "autoscaling" .Values.gateway.autoscaling "resources" .Values.gateway.resources) }}

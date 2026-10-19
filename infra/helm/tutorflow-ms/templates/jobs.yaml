@@ -1,0 +1,82 @@
+{{- if .Values.migrations.enabled }}
+{{/*
+Міграції — по Job-у на кожну базу, як migrate-* у compose: спільні міграції
+моноліту, а потім різ по межі сервіса (lab3/cut.ts). Хук pre-install/
+pre-upgrade: схема оновлюється ДО нових подів, і впала міграція — впав реліз.
+
+Лише секрет, без ConfigMap чарту: pre-install хуки виконуються раніше за
+звичайні ресурси. Міграціям потрібні DATABASE_URL і JWT_SECRET.
+*/}}
+{{- range $name, $svc := .Values.services }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-{{ $name }}
+  labels:
+    {{- include "ms.labels" (dict "ctx" $ "component" (printf "migrate-%s" $name)) | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "ms.labels" (dict "ctx" $ "component" (printf "migrate-%s" $name)) | nindent 8 }}
+    spec:
+      {{- include "ms.podSecurity" $ | nindent 6 }}
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: {{ include "ms.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["node", "services/api/dist/lab3/migrate.js", {{ $name | quote }}]
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.secretName }}
+          env:
+            - name: NODE_ENV
+              value: production
+            {{- include "ms.databaseEnv" (dict "ctx" $ "database" $svc.database) | nindent 12 }}
+---
+{{- end }}
+{{- end }}
+{{- if .Values.seed.run }}
+{{/*
+Скид демо-даних в усіх чотирьох базах — reset у compose. Один процес на всі
+бази навмисно: студент №2 у білінгу й у нагадуваннях — та сама людина, і
+рівність ідентифікаторів тримається на детермінованому сідері.
+
+Бере DATABASE_URL_<СЕРВІС> прямо з секрету. NODE_ENV=development — бо в
+reset.js запобіжник проти продакшну; знімається лише тут і лише явно.
+Після скиду підключений викладачем токен еквайрингу зникає.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: reset
+  labels:
+    {{- include "ms.labels" (dict "ctx" . "component" "reset") | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    spec:
+      {{- include "ms.podSecurity" . | nindent 6 }}
+      restartPolicy: Never
+      containers:
+        - name: reset
+          image: {{ include "ms.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "services/api/dist/lab3/reset.js"]
+          {{- include "ms.envFrom" . | nindent 10 }}
+          env:
+            - name: NODE_ENV
+              value: development
+{{- end }}

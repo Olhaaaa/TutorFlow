@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tutorflow-ms
+description: Tutorflow (мікросервіси, лаба 3) — gateway, чотири сервіси, три воркери, Redis, міграції
+type: application
+version: 0.1.0
+appVersion: "lab3"

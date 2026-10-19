@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tutorflow
+description: Tutorflow (моноліт) — API зі SPA, воркер, Redis, міграції
+type: application
+version: 0.1.0
+appVersion: "lab2"

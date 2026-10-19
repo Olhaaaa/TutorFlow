@@ -1,0 +1,51 @@
+{{/*
+Фонова робота — та сама, що у воркері моноліту, але кожна там, де її дані
+(lab3/worker.ts):
+
+  scheduling-worker     переходи станів, нагадування, дренаж outbox
+  billing-worker        дренаж outbox
+  notifications-worker  споживач стріму, бот Telegram, перевідправка
+
+По одній репліці й strategy: Recreate. Для notifications-worker це не вибір, а
+вимога: у ньому бот, а Telegram не дає getUpdates двом процесам (409), тож
+RollingUpdate на мить мав би двох. Іншим двом друга репліка нічого не дала б:
+їхня робота ідемпотентна, але й не ділиться.
+*/}}
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.worker }}
+{{- $component := printf "%s-worker" $name }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $component }}
+  labels:
+    {{- include "ms.labels" (dict "ctx" $ "component" $component) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "ms.selector" (dict "ctx" $ "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ms.labels" (dict "ctx" $ "component" $component) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+    spec:
+      {{- include "ms.podSecurity" $ | nindent 6 }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: {{ include "ms.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["node", "services/api/dist/lab3/worker.js", {{ $name | quote }}]
+          {{- include "ms.envFrom" $ | nindent 10 }}
+          env:
+            {{- include "ms.databaseEnv" (dict "ctx" $ "database" $svc.database) | nindent 12 }}
+          resources:
+            {{- toYaml $.Values.workerResources | nindent 12 }}
+---
+{{- end }}
+{{- end }}

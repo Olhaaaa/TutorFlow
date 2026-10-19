@@ -1,0 +1,83 @@
+# Мікросервісна версія (лаба 3) — той самий образ, що й у lab3-microservices/
+# compose.yml, ті самі команди. Те, що відоме лише після terraform apply
+# (образ, адреса, ім'я статичної IP), передає infra/deploy.sh через --set.
+
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Створюються Terraform-ом для середовища microservices.
+#   tutorflow-secrets: DATABASE_URL_<СЕРВІС>, JWT_SECRET, INTERNAL_TOKEN,
+#                      PAYMENT_TOKEN_KEY, TELEGRAM_BOT_TOKEN
+#   tutorflow-platform: PUBLIC_BASE_URL (адреса gateway)
+secretName: tutorflow-secrets
+platformConfigMap: tutorflow-platform
+
+app:
+  teacherTimezone: Europe/Kyiv
+  maintenanceIntervalSec: 60
+
+# Чотири сервіси з власною базою. Ім'я сервіса — водночас ім'я Service у
+# Kubernetes: сусіди звертаються за http://<ім'я>:8080, як у Compose, тому
+# конфігурація в обох середовищах однакова.
+#   database — ключ у секреті: DATABASE_URL_<database у верхньому регістрі>
+#   worker   — чи є в сервісу фонова робота (у входу — немає)
+services:
+  identity:
+    database: identity
+    worker: false
+    autoscaling: { minReplicas: 1, maxReplicas: 2 }
+  scheduling:
+    database: scheduling
+    worker: true
+    autoscaling: { minReplicas: 1, maxReplicas: 4 }
+  billing:
+    database: billing
+    worker: true
+    autoscaling: { minReplicas: 1, maxReplicas: 3 }
+  notifications:
+    database: notifications
+    worker: true
+    autoscaling: { minReplicas: 1, maxReplicas: 2 }
+
+serviceResources:
+  requests: { cpu: 100m, memory: 192Mi }
+  limits: { memory: 384Mi }
+
+# Gateway — єдиний вхід ззовні. Стану не має, тому масштабується вільно:
+# у compose це єдина точка відмови (ADR-0020), тут — ні.
+gateway:
+  autoscaling: { minReplicas: 1, maxReplicas: 3 }
+  resources:
+    requests: { cpu: 100m, memory: 160Mi }
+    limits: { memory: 320Mi }
+
+# HPA для всіх HTTP-сервісів — одна ціль.
+targetCPUUtilizationPercentage: 70
+
+workerResources:
+  requests: { cpu: 50m, memory: 160Mi }
+  limits: { memory: 320Mi }
+
+redis:
+  image: redis:8-alpine
+  storage: 1Gi
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+migrations:
+  enabled: true
+
+# Скид демо-даних в усіх чотирьох базах (lab3/reset.js): drop schema → міграції
+# → сідер → різ. Лише явно: infra/deploy.sh seed --env microservices
+seed:
+  run: false
+
+ingress:
+  enabled: true
+  host: ""
+  staticIpName: ""
+  managedCertificate: true
+  httpsRedirect: false

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "ms.labels" (dict "ctx" . "component" "config") | nindent 4 }}
+data:
+  NODE_ENV: production
+  TEACHER_TIMEZONE: {{ .Values.app.teacherTimezone | quote }}
+  MAINTENANCE_INTERVAL_SEC: {{ .Values.app.maintenanceIntervalSec | quote }}
+  # Граф зв'язків — той самий, що в x-service у lab3-microservices/compose.yml.
+  # Імена — імена Service у цьому namespace; DNS кластера розводить їх так само,
+  # як DNS мережі Compose.
+  IDENTITY_URL: http://identity:8080
+  SCHEDULING_URL: http://scheduling:8080
+  BILLING_URL: http://billing:8080
+  NOTIFICATIONS_URL: http://notifications:8080
+  REDIS_URL: redis://redis:6379
+  # INTERNAL_TOKEN і PUBLIC_BASE_URL — від Terraform (секрет і платформна ConfigMap).

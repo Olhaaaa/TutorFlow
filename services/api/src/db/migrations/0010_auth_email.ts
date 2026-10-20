@@ -25,20 +25,42 @@
  */
 import { type Kysely, sql } from 'kysely';
 
+/*
+ * `if exists` на кожній зміні наявних таблиць — не перестраховка, а умова
+ * лабораторної 3. Там кожна база після спільних міграцій ВТРАЧАЄ чужі таблиці
+ * (lab3/cut.ts): у базі нагадувань немає `teachers`, у базі розкладу —
+ * `students`. Поки бази піднімаються з нуля, це непомітно: міграції бачать
+ * повну схему, а різ іде після. Але міграція, що з'являється ПІСЛЯ різу,
+ * накладається на вже розрізану базу — і без `if exists` падає на першій же
+ * таблиці, якої там нема. Саме так упав перший деплой цієї міграції в GKE.
+ *
+ * Нові таблиці створюються завжди: зайві різ прибере одразу після міграцій.
+ * Правило для наступних міграцій те саме; його тримає тест
+ * lab3.migrate-after-cut.test.ts.
+ */
 export async function up(db: Kysely<unknown>): Promise<void> {
   await sql`
-    alter table teachers
+    alter table if exists teachers
       add column email_verified_at   timestamptz,
       add column password_changed_at timestamptz not null default now()`.execute(db);
 
   await sql`
-    alter table students
+    alter table if exists students
       add column password_changed_at timestamptz not null default now()`.execute(db);
 
   /* Усі, хто вже існує, вважаються підтвердженими: їх завів сідер або
      викладач, тобто поза формою реєстрації. Інакше після міграції ніхто з
-     наявних викладачів не зміг би увійти. */
-  await sql`update teachers set email_verified_at = created_at`.execute(db);
+     наявних викладачів не зміг би увійти.
+
+     `update` не має `if exists`, тому перевірка — на боці бази: `to_regclass`
+     дає null, якщо таблиці в цій базі немає. */
+  await sql`
+    do $$
+    begin
+      if to_regclass('teachers') is not null then
+        update teachers set email_verified_at = created_at;
+      end if;
+    end $$`.execute(db);
 
   await sql`
     create table auth_tokens (
@@ -75,9 +97,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 export async function down(db: Kysely<unknown>): Promise<void> {
   await sql`drop table if exists auth_throttle`.execute(db);
   await sql`drop table if exists auth_tokens`.execute(db);
-  await sql`alter table students drop column if exists password_changed_at`.execute(db);
+  await sql`alter table if exists students drop column if exists password_changed_at`.execute(db);
   await sql`
-    alter table teachers
+    alter table if exists teachers
       drop column if exists email_verified_at,
       drop column if exists password_changed_at`.execute(db);
 }

@@ -118,16 +118,6 @@ variable "smtp_urls" {
   sensitive   = true
 }
 
-variable "mail_from" {
-  description = <<-EOT
-    Відправник листів. Домен мусить збігатися з тим, для якого в провайдера
-    налаштований SPF, інакше листи йдуть у спам — саме тому значення окреме
-    від smtp_urls.
-  EOT
-  type        = string
-  default     = "Tutorflow <no-reply@tutorflow.local>"
-}
-
 variable "keda_version" {
   description = "Версія чарту KEDA. null — остання на момент apply; для відтворюваності варто зафіксувати"
   type        = string

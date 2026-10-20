@@ -1,7 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { BillingModule } from '../billing/billing.module.js';
 import { SchedulingModule } from '../scheduling/scheduling.module.js';
-import { NoopOutboxFlush, OUTBOX_FLUSH } from '../outbox/flush.js';
+import { MailModule } from '../mail/mail.module.js';
 import { AuthTokensRepository } from './auth-tokens.repository.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
@@ -30,7 +30,6 @@ import { TokenModule } from './token.module.js';
   providers: [
     AuthService,
     AuthTokensRepository,
-    { provide: OUTBOX_FLUSH, useClass: NoopOutboxFlush },
     LocalCredentialsAdapter,
     { provide: CREDENTIALS_PORT, useExisting: LocalCredentialsAdapter },
   ],
@@ -47,7 +46,10 @@ export class AuthModule {}
  * обидві його.
  */
 @Module({
-  imports: [TokenModule],
+  // Пошта потрібна саме тут: листи підтвердження й відновлення надсилає той,
+  // хто випускає токени. У моноліті модуль підключений у кореневому, у
+  // сервісі входу — ось тут, бо кореневого модуля там немає.
+  imports: [TokenModule, MailModule],
   controllers: [AuthController],
   providers: [AuthService, AuthTokensRepository],
   exports: [AuthService],

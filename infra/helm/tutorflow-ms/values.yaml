@@ -17,7 +17,10 @@ platformConfigMap: tutorflow-platform
 app:
   teacherTimezone: Europe/Kyiv
   # Відправник листів підтвердження пошти й відновлення пароля.
-  mailFrom: "Tutorflow <no-reply@tutorflow.local>"
+  # Адреса мусить бути підтверджена в кабінеті Brevo (Senders → Verified),
+  # інакше провайдер відхилить лист. Для duckdns-домену SPF не налаштувати,
+  # тому відправник — особиста підтверджена адреса, а не no-reply@домен.
+  mailFrom: "Tutorflow (КПІ) <oliakyryliuk04@gmail.com>"
   maintenanceIntervalSec: 60
 
 # Чотири сервіси з власною базою. Ім'я сервіса — водночас ім'я Service у

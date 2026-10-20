@@ -18,10 +18,13 @@ import { BalanceCard } from '@/features/balance/BalanceCard';
 import { PaymentReturn, TopupCard } from '@/features/balance/Topup';
 import { TelegramCard } from '@/features/profile/TelegramCard';
 import { TimezoneCard } from '@/features/profile/TimezoneCard';
+import { PasswordCard } from '@/features/profile/PasswordCard';
 import { Calendar } from '@/features/calendar/Calendar';
 import { CalendarFeedCard } from '@/features/calendar/CalendarFeedCard';
 import { addDays, dayKey, weekAnchor, weekDays } from '@/features/calendar/time';
 import { Login } from '@/routes/Login';
+import { Register } from '@/routes/Register';
+import { ResetPassword, VerifyEmail } from '@/routes/AuthLink';
 import { TeacherHome } from '@/routes/TeacherHome';
 import { Styleguide } from '@/routes/Styleguide';
 
@@ -58,6 +61,10 @@ export function App() {
   // Провайдер повертає користувача на #payment-<id>: за ним екран розуміє,
   // статус якого платежу опитувати.
   const returnedPayment = /^#payment-(\d+)$/.exec(hash)?.[1];
+  /* Посилання з листа: `#verify-<код>` і `#reset-<код>`. Код прибирається з
+     адреси одразу після зчитування — інакше він осідає в історії браузера. */
+  const mailLink = /^#(verify|reset)-(.+)$/.exec(hash);
+  const [registering, setRegistering] = useState(false);
 
   const tz = session?.timezone ?? 'UTC';
   const anchor = useMemo(() => weekAnchor(cursor, tz), [cursor, tz]);
@@ -156,9 +163,33 @@ export function App() {
     }
   };
 
+  if (mailLink) {
+    const [, route, token] = mailLink;
+    const backToLogin = () => {
+      window.location.hash = '';
+      setRegistering(false);
+    };
+    return (
+      <main className="flex min-h-dvh items-center justify-center p-4">
+        {route === 'verify'
+          ? <VerifyEmail token={decodeURIComponent(token!)} onDone={backToLogin} />
+          : <ResetPassword token={decodeURIComponent(token!)} onDone={backToLogin} />}
+      </main>
+    );
+  }
+
   if (!session) {
+    if (registering) {
+      return (
+        <main className="flex min-h-dvh items-center justify-center p-4">
+          <Register onBack={() => setRegistering(false)} />
+        </main>
+      );
+    }
+
     return (
       <Login
+        onRegister={() => setRegistering(true)}
         onReady={(s) => {
           saveSession(s);
           setSession(s);
@@ -241,6 +272,7 @@ export function App() {
                   <BalanceCard balance={balance} tz={tz} session={session} />
                   <TopupCard session={session} />
                   <TimezoneCard session={session} onChange={changeTimezone} />
+                  <PasswordCard session={session} />
                   <TelegramCard session={session} />
                   <CalendarFeedCard session={session} />
                 </div>

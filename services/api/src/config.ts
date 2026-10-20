@@ -111,6 +111,24 @@ export const config = {
    */
   redisUrl: optional('REDIS_URL'),
 
+  mail: {
+    /**
+     * Транспорт одним рядком: `smtps://user:pass@smtp.example.com:465`.
+     *
+     * Без нього застосунок працює, а листи йдуть у лог — див. LogMailAdapter.
+     * Це свідомо: у лабораторній робочого шлюзу може не бути, а реєстрацію
+     * треба вміти перевірити.
+     */
+    smtpUrl: optional('SMTP_URL'),
+
+    /**
+     * Відправник. Домен тут мусить збігатися з тим, для якого налаштований
+     * SPF у провайдера, інакше листи йдуть у спам — саме тому значення
+     * окреме, а не зібране з SMTP_URL.
+     */
+    from: process.env.MAIL_FROM ?? 'Tutorflow <no-reply@tutorflow.local>',
+  },
+
   telegram: {
     /**
      * Токен бота від @BotFather. Без нього канал вимкнений: нагадування

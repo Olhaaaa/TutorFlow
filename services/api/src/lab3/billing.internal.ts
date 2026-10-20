@@ -1,17 +1,18 @@
 import {
-  Body, ConflictException, Controller, Get, Inject, NotFoundException, Param, ParseIntPipe,
-  Post, Query, UseGuards,
+  Body, ConflictException, Controller, Get, HttpCode, Inject, NotFoundException, Param,
+  ParseIntPipe, Post, Query, UseGuards,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import {
   INSUFFICIENT_FUNDS,
   type BalanceResult, type MoneyTransfer, type StudentCalendarToken,
-  type StudentIdentity, type StudentNames, type TransferResult,
+  type StudentIdentity, type StudentNames, type TeacherProfile, type TransferResult,
 } from '@tutorflow/contracts';
 import { StudentsRepository } from '../billing/students.repository.js';
 import { STUDENT_DIRECTORY, type StudentDirectoryPort } from '../scheduling/ports.js';
 import { InsufficientFundsError, TransfersService } from '../billing/transfers.service.js';
 import { PaymentsRepository } from '../payments/payments.repository.js';
+import { TeacherProfileProjection } from './projections.js';
 import { InternalGuard } from './internal.guard.js';
 
 /**
@@ -37,9 +38,18 @@ export class BillingInternalController {
     @Inject(STUDENT_DIRECTORY) private readonly directory: StudentDirectoryPort,
     private readonly transfers: TransfersService,
     private readonly payments: PaymentsRepository,
+  
+    private readonly teacherProfiles: TeacherProfileProjection,
   ) {}
 
   /* ---------- довідник студентів ---------- */
+
+  @Post('teachers')
+  @HttpCode(200)
+  async acceptTeacher(@Body() profile: TeacherProfile): Promise<{ accepted: true }> {
+    await this.teacherProfiles.upsertForBilling(profile);
+    return { accepted: true };
+  }
 
   @Get('students/names')
   async names(@Query('ids') ids?: string): Promise<StudentNames> {

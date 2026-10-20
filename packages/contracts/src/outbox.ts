@@ -19,7 +19,7 @@
  * може відкотитись. Тому нагадування лишаються at-most-once, як у лабі 2, і
  * від втрати їх страхує вікно нагадувань, а не доставка.
  */
-import type { CredentialUpsert, MoneyTransfer, StudentContact } from './internal.js';
+import type { CredentialUpsert, MoneyTransfer, StudentContact, TeacherProfile } from './internal.js';
 
 export type OutboxKind =
   /** Розклад → білінг: списати за заняття. */
@@ -31,7 +31,11 @@ export type OutboxKind =
   /** Білінг → вхід: зʼявився студент, йому потрібні реквізити входу. */
   | 'identity.credential'
   /** Білінг → нагадування: контакт студента для каналу доставки. */
-  | 'notifications.contact';
+  | 'notifications.contact'
+  /** Вхід → розклад: зареєструвався викладач, потрібні зона й ціна. */
+  | 'scheduling.teacher'
+  /** Вхід → білінг: той самий викладач, потрібне імʼя для журналу. */
+  | 'billing.teacher';
 
 /** Завдання з журналу у розібраному вигляді. Дискримінант — kind. */
 export type OutboxJob =
@@ -39,7 +43,9 @@ export type OutboxJob =
   | { kind: 'billing.refund'; payload: MoneyTransfer }
   | { kind: 'scheduling.apply_payment'; payload: { opId: string; studentId: number } }
   | { kind: 'identity.credential'; payload: CredentialUpsert }
-  | { kind: 'notifications.contact'; payload: StudentContact };
+  | { kind: 'notifications.contact'; payload: StudentContact }
+  | { kind: 'scheduling.teacher'; payload: TeacherProfile }
+  | { kind: 'billing.teacher'; payload: TeacherProfile };
 
 /**
  * Чим скінчилась спроба доставки.

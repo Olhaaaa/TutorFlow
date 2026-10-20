@@ -6,6 +6,15 @@
 import type { ColumnType, Generated, GeneratedAlways } from 'kysely';
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
+/**
+ * Колонка з дефолтом у базі, яку застосунок ще й оновлює явно.
+ *
+ * `Generated<Timestamp>` для цього не годиться: він робить значення
+ * необовʼязковим при вставці, але разом із тим звужує тип оновлення так, що
+ * звичайний `Date` перестає підходити. Тут вставка необовʼязкова, оновлення —
+ * звичайне.
+ */
+export type DefaultedTimestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 export type SlotStatusColumn = 'free' | 'pre_booked' | 'booked' | 'done' | 'cancelled_late';
 export type TransactionKindColumn = 'topup' | 'lesson_charge' | 'refund' | 'adjustment';
 export type PaymentProviderColumn = 'monobank';
@@ -29,6 +38,10 @@ export interface TeachersTable {
   payments_connected_at: Timestamp | null;
   /** Секрет у рядку адреси стрічки .ics: календарна програма не вміє входити. */
   calendar_token: string | null;
+  /** Коли підтверджено пошту. Порожнє — ще ні, входити не можна. */
+  email_verified_at: Timestamp | null;
+  /** Остання зміна пароля. Токени, випущені раніше, вважаються застарілими. */
+  password_changed_at: DefaultedTimestamp;
   created_at: Generated<Timestamp>;
 }
 
@@ -44,7 +57,30 @@ export interface StudentsTable {
   telegram_link_code: string | null;
   /** Секрет у рядку адреси стрічки .ics. Окремий від викладацького. */
   calendar_token: string | null;
+  /** Остання зміна пароля. Див. teachers.password_changed_at. */
+  password_changed_at: DefaultedTimestamp;
   created_at: Generated<Timestamp>;
+}
+
+export type AuthTokenPurpose = 'verify_email' | 'reset_password';
+
+/** Одноразовий код із листа. У базі лежить ХЕШ, а не сам код. */
+export interface AuthTokensTable {
+  id: Generated<number>;
+  purpose: AuthTokenPurpose;
+  role: 'teacher' | 'student';
+  subject_id: number;
+  token_hash: string;
+  expires_at: Timestamp;
+  used_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+}
+
+/** Лічильник спроб. У базі, а не в памʼяті процесу: процесів більше одного. */
+export interface AuthThrottleTable {
+  key: string;
+  attempts: number;
+  window_starts: Timestamp;
 }
 
 export interface AvailabilityRulesTable {
@@ -175,6 +211,8 @@ export interface OutboxTable {
 export interface DB {
   teachers: TeachersTable;
   students: StudentsTable;
+  auth_tokens: AuthTokensTable;
+  auth_throttle: AuthThrottleTable;
   availability_rules: AvailabilityRulesTable;
   enrollments: EnrollmentsTable;
   slots: SlotsTable;

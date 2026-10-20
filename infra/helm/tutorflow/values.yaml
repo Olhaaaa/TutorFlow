@@ -12,6 +12,8 @@ platformConfigMap: tutorflow-platform  # PUBLIC_BASE_URL
 
 app:
   teacherTimezone: Europe/Kyiv
+  # Відправник листів підтвердження пошти й відновлення пароля.
+  mailFrom: "Tutorflow <no-reply@tutorflow.local>"
   # Інтервал переходів станів у воркері (режим single). У режимі split переходи
   # робить CronJob, і розклад задається в worker.transitions.schedule.
   maintenanceIntervalSec: 60

@@ -95,6 +95,27 @@ export class StudentsRepository {
    * інакше два одночасні поповнення затерли б одне одного. База рахує приріст
    * атомарно в межах рядка.
    */
+  /* ---------- пароль ---------- */
+
+  /** Профіль для листів. Студента не реєструють сам, але пароль він міняє. */
+  async identityById(id: number, tx?: Executor) {
+    const row = await this.db(tx)
+      .selectFrom('students')
+      .select(['id', 'name', 'email'])
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  async setPassword(id: number, passwordHash: string, at: Date, tx?: Executor) {
+    await this.db(tx)
+      .updateTable('students')
+      .set({ password_hash: passwordHash, password_changed_at: at })
+      .where('id', '=', id)
+      .execute();
+  }
+
   /* ---------- канал нагадувань ---------- */
 
   /**

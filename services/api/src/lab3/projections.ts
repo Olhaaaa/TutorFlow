@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { CredentialUpsert, StudentContact } from '@tutorflow/contracts';
+import { sql } from 'kysely';
+import type { TeacherProfile, CredentialUpsert, StudentContact } from '@tutorflow/contracts';
 import { KYSELY, type Database } from '../db/database.module.js';
 
 /**
@@ -29,29 +30,23 @@ export class CredentialsProjection {
   /**
    * Прийняти реквізити входу.
    *
-   * Викладачі в сервісі входу зʼявляються сідером разом із демо-даними —
-   * маршруту «створити викладача» в застосунку немає взагалі, тому й
-   * розсилати нічого. Студенти приходять завданням від білінгу.
+   * Студенти приходять завданням від білінгу — їх заводить викладач.
+   * Викладачі приходять із сідера й із форми реєстрації, і для них запрос
+   * пишеться СИРИМ SQL навмисно: у базі сервіса входу немає колонки
+   * `default_price_minor` — її зрізано разом із рештою чужих, — а спільний
+   * тип схеми вимагає її при вставці. Писати через типізований будівник
+   * означало б або тримати в базі входу чужу колонку, або брехати типом.
    */
   async upsert(rec: CredentialUpsert): Promise<void> {
     if (rec.role === 'teacher') {
-      await this.db
-        .insertInto('teachers')
-        .values({
-          id: rec.id,
-          name: rec.name,
-          email: rec.email,
-          password_hash: rec.passwordHash,
-          timezone: rec.timezone,
-          default_price_minor: 0,
-        })
-        .onConflict((oc) => oc.column('id').doUpdateSet({
-          name: rec.name,
-          email: rec.email,
-          password_hash: rec.passwordHash,
-          timezone: rec.timezone,
-        }))
-        .execute();
+      await sql`
+        insert into teachers (id, name, email, password_hash, timezone)
+        values (${rec.id}, ${rec.name}, ${rec.email}, ${rec.passwordHash}, ${rec.timezone})
+        on conflict (id) do update set
+          name = excluded.name,
+          email = excluded.email,
+          password_hash = excluded.password_hash,
+          timezone = excluded.timezone`.execute(this.db);
     } else {
       await this.db
         .insertInto('students')
@@ -124,5 +119,46 @@ export class ContactProjection {
       .execute();
 
     this.log.log(`контакт студента ${contact.studentId} прийнятий`);
+  }
+}
+
+/**
+ * Копія профілю викладача в базі СУСІДА.
+ *
+ * Живе в розкладі й у білінгу, і колонки в них різні: розкладу потрібні зона
+ * й ціна, білінгу — лише імʼя, бо все інше з профілю там зрізано. Тому запрос
+ * і тут сирий: один типізований будівник на дві різні таблиці з однаковою
+ * назвою не напишеш.
+ *
+ * Операція ідемпотентна: повторна доставка того самого завдання оновлює
+ * рядок, а не падає на унікальному ключі.
+ */
+@Injectable()
+export class TeacherProfileProjection {
+  private readonly log = new Logger('TeacherProfile');
+
+  constructor(@Inject(KYSELY) private readonly db: Database) {}
+
+  /** Розклад: зона й типова ціна — те, з чого розгортаються слоти. */
+  async upsertForScheduling(p: TeacherProfile): Promise<void> {
+    await sql`
+      insert into teachers (id, name, timezone, default_price_minor)
+      values (${p.id}, ${p.name}, ${p.timezone}, ${p.defaultPriceMinor})
+      on conflict (id) do update set
+        name = excluded.name,
+        timezone = excluded.timezone,
+        default_price_minor = excluded.default_price_minor`.execute(this.db);
+
+    this.log.log(`викладач ${p.id} прийнятий розкладом`);
+  }
+
+  /** Білінг: лише імʼя — решту профілю звідти зрізано. */
+  async upsertForBilling(p: TeacherProfile): Promise<void> {
+    await sql`
+      insert into teachers (id, name)
+      values (${p.id}, ${p.name})
+      on conflict (id) do update set name = excluded.name`.execute(this.db);
+
+    this.log.log(`викладач ${p.id} прийнятий білінгом`);
   }
 }

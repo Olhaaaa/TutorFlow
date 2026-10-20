@@ -4,6 +4,7 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { DatabaseModule } from './db/database.module.js';
 import { EventsModule } from './events/events.module.js';
 import { HealthController } from './health/health.controller.js';
+import { MailModule } from './mail/mail.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { MaintenanceModule } from './maintenance/maintenance.module.js';
@@ -32,6 +33,7 @@ import { TelegramModule } from './telegram/telegram.module.js';
     MaintenanceModule,
     NotificationsModule,
     TelegramModule,
+    MailModule,
     AuthModule,
     // Збірка фронтенду віддається тим самим процесом: одна одиниця
     // розгортання й жодних питань із CORS. exclude обовʼязковий — без нього

@@ -105,6 +105,29 @@ variable "telegram_bot_tokens" {
   sensitive   = true
 }
 
+variable "smtp_urls" {
+  description = <<-EOT
+    Рядок підключення SMTP за ключем середовища, наприклад
+    smtps://user:pass@smtp.example.com:465. Необов'язково: без нього застосунок
+    працює, а листи підтвердження пошти пишуться в лог контейнера — див.
+    LogMailAdapter. Для показу реєстрації цього достатньо, для справжньої
+    розсилки — ні.
+  EOT
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+}
+
+variable "mail_from" {
+  description = <<-EOT
+    Відправник листів. Домен мусить збігатися з тим, для якого в провайдера
+    налаштований SPF, інакше листи йдуть у спам — саме тому значення окреме
+    від smtp_urls.
+  EOT
+  type        = string
+  default     = "Tutorflow <no-reply@tutorflow.local>"
+}
+
 variable "keda_version" {
   description = "Версія чарту KEDA. null — остання на момент apply; для відтворюваності варто зафіксувати"
   type        = string

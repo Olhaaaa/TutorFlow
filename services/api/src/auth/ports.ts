@@ -9,6 +9,33 @@ export interface CredentialRecord {
   name: string;
   timezone: string;
   teacherId: number;
+  /**
+   * Чи підтверджена пошта.
+   *
+   * Для студента завжди `true`, і це не недогляд: студента заводить
+   * викладач, тобто адресу вже підтвердила людина, яка за нього відповідає.
+   * Форма реєстрації існує лише для викладачів, тому й підтверджувати
+   * пошту доводиться тільки їм.
+   */
+  emailVerified: boolean;
+}
+
+/** Профіль, потрібний листу: імʼя в звертанні й адреса. */
+export interface IdentityRecord {
+  id: number;
+  role: Role;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+}
+
+/** Те, що потрібно, щоб завести викладача з форми реєстрації. */
+export interface TeacherRegistration {
+  name: string;
+  email: string;
+  passwordHash: string;
+  timezone: string;
+  defaultPriceMinor: number;
 }
 
 /**
@@ -46,6 +73,30 @@ export interface CredentialsPort {
     role: Role,
     timezone: string,
   ): Promise<{ id: number; name: string; timezone: string } | null>;
+
+  /**
+   * Завести викладача з непідтвердженою поштою.
+   *
+   * @returns `null`, якщо адреса вже зайнята. Саме `null`, а не виняток:
+   *          зайнята пошта — очікуваний результат форми реєстрації, а не
+   *          поломка. Відповідь користувачеві при цьому однакова в обох
+   *          випадках — див. AuthService.register.
+   */
+  createTeacher(registration: TeacherRegistration): Promise<IdentityRecord | null>;
+
+  /** Профіль за номером і роллю — для листів і перевірок. */
+  identityById(id: number, role: Role): Promise<IdentityRecord | null>;
+
+  /**
+   * Позначити пошту підтвердженою.
+   *
+   * @returns `false`, якщо вона вже була підтверджена раніше: повторне
+   *          відкриття листа не має рухати момент підтвердження вперед.
+   */
+  markEmailVerified(id: number, at: Date): Promise<boolean>;
+
+  /** Записати новий хеш пароля разом із моментом зміни. */
+  setPassword(id: number, role: Role, passwordHash: string, at: Date): Promise<void>;
 }
 
 export const CREDENTIALS_PORT = 'CREDENTIALS_PORT';

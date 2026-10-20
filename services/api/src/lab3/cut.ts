@@ -68,12 +68,15 @@ export const CUTS: Record<Exclude<ServiceRole, 'gateway'>, Cut> = {
     // students іде з каскадом, і разом із ним зникає зовнішній ключ
     // slots.student_id: саме він не дав би заброньувати слот студентові,
     // якого в цій базі немає.
-    tables: ['students', 'transactions', 'payments', 'notifications'],
+    tables: [
+      'students', 'transactions', 'payments', 'notifications',
+      'auth_tokens', 'auth_throttle',
+    ],
     columns: [
       {
         table: 'teachers',
         columns: [
-          'email', 'password_hash',
+          'email', 'password_hash', 'email_verified_at', 'password_changed_at',
           'payment_provider', 'payment_token_encrypted', 'payments_connected_at',
         ],
       },
@@ -81,29 +84,38 @@ export const CUTS: Record<Exclude<ServiceRole, 'gateway'>, Cut> = {
   },
 
   billing: {
-    tables: ['availability_rules', 'enrollments', 'slots', 'external_busy', 'notifications'],
+    tables: [
+      'availability_rules', 'enrollments', 'slots', 'external_busy', 'notifications',
+      'auth_tokens', 'auth_throttle',
+    ],
     columns: [
       {
         table: 'teachers',
         columns: [
           'email', 'password_hash', 'timezone', 'default_price_minor',
           'cancel_hours', 'payment_deadline_hours', 'reminder_lead_hours',
-          'calendar_token',
+          'calendar_token', 'email_verified_at', 'password_changed_at',
         ],
       },
-      { table: 'students', columns: ['telegram_chat_id', 'telegram_link_code'] },
+      {
+        table: 'students',
+        columns: ['telegram_chat_id', 'telegram_link_code', 'password_changed_at'],
+      },
     ],
   },
 
   notifications: {
     tables: [
       'teachers', 'availability_rules', 'enrollments', 'slots',
-      'external_busy', 'transactions', 'payments',
+      'external_busy', 'transactions', 'payments', 'auth_tokens', 'auth_throttle',
     ],
     columns: [
       {
         table: 'students',
-        columns: ['teacher_id', 'email', 'password_hash', 'balance_minor', 'calendar_token'],
+        columns: [
+          'teacher_id', 'email', 'password_hash', 'balance_minor', 'calendar_token',
+          'password_changed_at',
+        ],
       },
     ],
   },

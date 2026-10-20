@@ -16,6 +16,8 @@ platformConfigMap: tutorflow-platform
 
 app:
   teacherTimezone: Europe/Kyiv
+  # Відправник листів підтвердження пошти й відновлення пароля.
+  mailFrom: "Tutorflow <no-reply@tutorflow.local>"
   maintenanceIntervalSec: 60
 
 # Чотири сервіси з власною базою. Ім'я сервіса — водночас ім'я Service у

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { StudentsRepository } from '../billing/students.repository.js';
 import { TeachersRepository } from '../scheduling/teachers.repository.js';
-import type { CredentialsPort, CredentialRecord } from './ports.js';
+import type { CredentialsPort, CredentialRecord, IdentityRecord, TeacherRegistration } from './ports.js';
 import type { Role } from './token.service.js';
 
 /**
@@ -37,6 +37,7 @@ export class LocalCredentialsAdapter implements CredentialsPort {
         name: teacher.name,
         timezone: teacher.timezone,
         teacherId: teacher.id,
+        emailVerified: teacher.email_verified_at !== null,
       };
     }
 
@@ -50,6 +51,8 @@ export class LocalCredentialsAdapter implements CredentialsPort {
         name: student.name,
         timezone: student.timezone,
         teacherId: student.teacher_id,
+        // Студента заводить викладач — адресу вже підтвердила людина.
+        emailVerified: true,
       };
     }
 
@@ -60,5 +63,41 @@ export class LocalCredentialsAdapter implements CredentialsPort {
     return role === 'teacher'
       ? this.teachers.updateTimezone(id, timezone)
       : this.students.updateTimezone(id, timezone);
+  }
+
+  async createTeacher(reg: TeacherRegistration): Promise<IdentityRecord | null> {
+    const row = await this.teachers.createUnverified(reg);
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      role: 'teacher',
+      name: row.name,
+      email: row.email,
+      emailVerified: false,
+    };
+  }
+
+  async identityById(id: number, role: Role): Promise<IdentityRecord | null> {
+    if (role === 'teacher') {
+      const t = await this.teachers.identityById(id);
+      return t && {
+        id: t.id, role: 'teacher', name: t.name, email: t.email,
+        emailVerified: t.email_verified_at !== null,
+      };
+    }
+
+    const s = await this.students.identityById(id);
+    return s && { id: s.id, role: 'student', name: s.name, email: s.email, emailVerified: true };
+  }
+
+  async markEmailVerified(id: number, at: Date): Promise<boolean> {
+    return (await this.teachers.markEmailVerified(id, at)) !== null;
+  }
+
+  setPassword(id: number, role: Role, passwordHash: string, at: Date): Promise<void> {
+    return role === 'teacher'
+      ? this.teachers.setPassword(id, passwordHash, at)
+      : this.students.setPassword(id, passwordHash, at);
   }
 }

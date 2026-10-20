@@ -24,9 +24,10 @@ import { GatewayController } from './gateway.proxy.js';
 import { Lab3HealthController } from './health.controller.js';
 import { IdentityCredentialsAdapter } from './identity.adapters.js';
 import { IdentityInternalController } from './identity.internal.js';
+import { IdentityOutbox } from './identity.outbox.js';
 import { NotificationsInternalController } from './notifications.internal.js';
 import { OutboxDeliveryModule } from './outbox.module.js';
-import { ContactProjection, CredentialsProjection } from './projections.js';
+import { ContactProjection, CredentialsProjection, TeacherProfileProjection } from './projections.js';
 import {
   ChargeViaOutbox, PaymentsExpiryOverHttp, StudentDirectoryOverHttp,
 } from './scheduling.adapters.js';
@@ -84,7 +85,8 @@ class SchedulingPortsModule {}
     MaintenanceCoreModule,
   ],
   controllers: [SchedulingInternalController, Lab3HealthController],
-  providers: [SchedulingOutbox],
+  providers: [
+    TeacherProfileProjection, SchedulingOutbox],
 })
 export class SchedulingServiceModule {}
 
@@ -117,7 +119,8 @@ class BillingPortsModule {}
     PaymentsCoreModule,
   ],
   controllers: [BillingInternalController, Lab3HealthController],
-  providers: [BillingOutbox],
+  providers: [
+    TeacherProfileProjection, BillingOutbox],
 })
 export class BillingServiceModule {}
 
@@ -156,6 +159,7 @@ class IdentityPortsModule {}
     AuthCoreModule,
   ],
   controllers: [IdentityInternalController, Lab3HealthController],
+  providers: [IdentityOutbox],
 })
 export class IdentityServiceModule {}
 

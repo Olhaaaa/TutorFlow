@@ -12,6 +12,7 @@ import { TelegramUpdates } from '../telegram/telegram.updates.js';
 import { BillingOutbox } from './billing.outbox.js';
 import { lab3 } from './config.js';
 import { serviceRole } from './bootstrap.js';
+import { IdentityOutbox } from './identity.outbox.js';
 import { SchedulingOutbox } from './scheduling.outbox.js';
 import {
   BillingServiceModule, NotificationsServiceModule, SchedulingServiceModule,

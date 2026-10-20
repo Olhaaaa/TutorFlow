@@ -7,6 +7,8 @@ metadata:
 data:
   NODE_ENV: production
   TEACHER_TIMEZONE: {{ .Values.app.teacherTimezone | quote }}
+  # Відправник листів. Сам транспорт — у секреті (SMTP_URL).
+  MAIL_FROM: {{ .Values.app.mailFrom | quote }}
   MAINTENANCE_INTERVAL_SEC: {{ .Values.app.maintenanceIntervalSec | quote }}
   {{- if .Values.redis.enabled }}
   REDIS_URL: redis://{{ .Release.Name }}-redis:6379

@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { money } from '@/features/calendar/time';
 import { BusyCard } from '@/features/teacher/BusyCard';
 import { TimezoneCard } from '@/features/profile/TimezoneCard';
+import { PasswordCard } from '@/features/profile/PasswordCard';
 import { EnrollmentsCard } from './EnrollmentsCard';
 
 /** 0 — неділя, як у PostgreSQL extract(dow). Той самий порядок, що в API. */
@@ -161,6 +162,8 @@ export function AvailabilityPanel({
 
       <div className="space-y-4">
         <TimezoneCard session={session} onChange={onTimezoneChange} />
+
+        <PasswordCard session={session} />
 
         <BusyCard session={session} />
 

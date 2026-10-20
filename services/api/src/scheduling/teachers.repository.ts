@@ -13,7 +13,7 @@ export class TeachersRepository {
     return (
       (await (tx ?? this.root)
         .selectFrom('teachers')
-        .select(['id', 'name', 'email', 'password_hash', 'timezone'])
+        .select(['id', 'name', 'email', 'password_hash', 'timezone', 'email_verified_at'])
         .where('email', '=', email)
         .executeTakeFirst()) ?? null
     );
@@ -30,6 +30,81 @@ export class TeachersRepository {
     return (tx ?? this.root)
       .selectFrom('teachers')
       .select(['id', 'reminder_lead_hours'])
+      .execute();
+  }
+
+  /* ---------- реєстрація, підтвердження пошти, пароль ---------- */
+
+  /**
+   * Завести викладача непідтвердженим.
+   *
+   * Унікальність пошти перевіряє БАЗА, а не попереднє читання: між читанням
+   * і записом встигає пройти другий такий самий запрос, і тоді обидва
+   * вважали б адресу вільною. Порушення унікального індексу — не помилка
+   * програми, а нормальний результат гонки, тому воно перетворюється на
+   * `null`, а не на виняток.
+   */
+  async createUnverified(
+    t: { name: string; email: string; passwordHash: string; timezone: string; defaultPriceMinor: number },
+    tx?: Executor,
+  ) {
+    try {
+      const row = await (tx ?? this.root)
+        .insertInto('teachers')
+        .values({
+          name: t.name,
+          email: t.email,
+          password_hash: t.passwordHash,
+          timezone: t.timezone,
+          default_price_minor: t.defaultPriceMinor,
+          email_verified_at: null,
+        })
+        .returning(['id', 'name', 'email'])
+        .executeTakeFirstOrThrow();
+      return row;
+    } catch (e) {
+      if ((e as { code?: string }).code === '23505') return null;
+      throw e;
+    }
+  }
+
+  /** Профіль для листів і перевірок входу. Хеш пароля сюди не потрапляє. */
+  async identityById(id: number, tx?: Executor) {
+    const row = await (tx ?? this.root)
+      .selectFrom('teachers')
+      .select(['id', 'name', 'email', 'email_verified_at'])
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  /**
+   * Позначити пошту підтвердженою.
+   *
+   * `where email_verified_at is null` всередині UPDATE: повторне відкриття
+   * того самого листа не має рухати момент підтвердження вперед, інакше
+   * «підтверджено о 10:00» перетворюється на «о 14:00» і розбір інциденту
+   * спирається на неправду.
+   */
+  async markEmailVerified(id: number, at: Date, tx?: Executor) {
+    const row = await (tx ?? this.root)
+      .updateTable('teachers')
+      .set({ email_verified_at: at })
+      .where('id', '=', id)
+      .where('email_verified_at', 'is', null)
+      .returning(['id'])
+      .executeTakeFirst();
+
+    return row ?? null;
+  }
+
+  /** Новий пароль плюс момент зміни — одним записом, інакше вони розійдуться. */
+  async setPassword(id: number, passwordHash: string, at: Date, tx?: Executor) {
+    await (tx ?? this.root)
+      .updateTable('teachers')
+      .set({ password_hash: passwordHash, password_changed_at: at })
+      .where('id', '=', id)
       .execute();
   }
 

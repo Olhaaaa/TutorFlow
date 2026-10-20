@@ -7,6 +7,8 @@ metadata:
 data:
   NODE_ENV: production
   TEACHER_TIMEZONE: {{ .Values.app.teacherTimezone | quote }}
+  # Відправник листів. Сам транспорт — у секреті (SMTP_URL).
+  MAIL_FROM: {{ .Values.app.mailFrom | quote }}
   MAINTENANCE_INTERVAL_SEC: {{ .Values.app.maintenanceIntervalSec | quote }}
   # Граф зв'язків — той самий, що в x-service у lab3-microservices/compose.yml.
   # Імена — імена Service у цьому namespace; DNS кластера розводить їх так само,

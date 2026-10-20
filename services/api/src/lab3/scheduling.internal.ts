@@ -1,10 +1,13 @@
-import { Body, Controller, Get, Inject, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Get, HttpCode, Inject, Param, ParseIntPipe, Post, UseGuards,
+} from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import type { ApplyPaymentResult, PendingLessons } from '@tutorflow/contracts';
+import type { ApplyPaymentResult, PendingLessons, TeacherProfile } from '@tutorflow/contracts';
 import { KYSELY, type Database } from '../db/database.module.js';
 import { OUTBOX_FLUSH, type OutboxFlush } from '../outbox/flush.js';
 import { LESSONS_PORT, type LessonsPort } from '../billing/ports.js';
 import { TeachersRepository } from '../scheduling/teachers.repository.js';
+import { TeacherProfileProjection } from './projections.js';
 import { InternalGuard } from './internal.guard.js';
 
 /**
@@ -27,6 +30,8 @@ export class SchedulingInternalController {
     @Inject(LESSONS_PORT) private readonly lessons: LessonsPort,
     @Inject(OUTBOX_FLUSH) private readonly outbox: OutboxFlush,
     private readonly teachers: TeachersRepository,
+  
+    private readonly teacherProfiles: TeacherProfileProjection,
   ) {}
 
   /** Неоплачені заняття студента — з них білінг рахує борг у кабінеті. */
@@ -63,6 +68,13 @@ export class SchedulingInternalController {
    * Викликає сервіс входу, коли людина змінює зону в кабінеті. Запрос приходить
    * саме так, а не навпаки, бо вхід єдиний знає, ХТО його зробив.
    */
+  @Post('teachers')
+  @HttpCode(200)
+  async acceptTeacher(@Body() profile: TeacherProfile): Promise<{ accepted: true }> {
+    await this.teacherProfiles.upsertForScheduling(profile);
+    return { accepted: true };
+  }
+
   @Post('teachers/:id/timezone')
   async setTeacherTimezone(
     @Param('id', ParseIntPipe) teacherId: number,

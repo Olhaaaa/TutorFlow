@@ -129,6 +129,9 @@ resource "kubernetes_secret_v1" "app" {
       JWT_SECRET         = random_password.jwt[each.key].result
       PAYMENT_TOKEN_KEY  = random_password.payment_token_key[each.key].result
       TELEGRAM_BOT_TOKEN = lookup(var.telegram_bot_tokens, each.key, "")
+      # Порожній рядок означає «SMTP не налаштований»: застосунок переходить
+      # на запис листів у лог і працює далі.
+      SMTP_URL           = lookup(var.smtp_urls, each.key, "")
       INTERNAL_TOKEN     = random_password.internal_token[each.key].result
     },
     # Для мікросервісів: DATABASE_URL_SCHEDULING, DATABASE_URL_BILLING, ...

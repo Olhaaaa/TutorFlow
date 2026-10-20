@@ -45,10 +45,20 @@ export function clearSession(): void {
 
 export class ApiError extends Error {
   readonly status: number;
+  /**
+   * Тіло відповіді цілком.
+   *
+   * Потрібне там, де сервер каже більше за одне речення: перелік причин, з
+   * яких пароль не годиться, або скільки секунд чекати після 429. Текст для
+   * людини збирається з цього на екрані, а не на сервері, бо саме екран знає
+   * мову й місце, де показувати.
+   */
+  readonly payload: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, payload?: unknown) {
     super(message);
     this.status = status;
+    this.payload = payload;
     this.name = 'ApiError';
   }
 }
@@ -67,14 +77,16 @@ async function request<T>(path: string, token: string | null, init: RequestInit 
 
   if (!res.ok) {
     let message = `${res.status}`;
+    let payload: unknown;
     try {
       const body = (await res.json()) as { message?: string | string[] };
+      payload = body;
       const m = body.message;
       message = Array.isArray(m) ? m.join('; ') : (m ?? message);
     } catch {
       /* тіло не JSON — лишаємо код */
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, payload);
   }
 
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
@@ -100,6 +112,52 @@ export const api = {
     request<Session>('/auth/login', null, {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    }),
+
+  /* ---------- реєстрація й пароль ---------- */
+
+  /**
+   * Реєстрація викладача.
+   *
+   * Відповідь однакова і для вільної пошти, і для зайнятої — так задумано на
+   * сервері, тому екран однаково показує «перевірте скриньку».
+   */
+  register: (input: {
+    name: string; email: string; password: string; timezone: string; priceMinor?: number;
+  }) => request<{ status: 'pending' }>('/auth/register', null, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
+
+  verifyEmail: (token: string) =>
+    request<{ verified: true; email: string | null }>('/auth/verify-email', null, {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+
+  resendVerification: (email: string) =>
+    request<{ status: 'sent' }>('/auth/verify-email/resend', null, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  forgotPassword: (email: string) =>
+    request<{ status: 'sent' }>('/auth/password/forgot', null, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ status: 'changed' }>('/auth/password/reset', null, {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
+
+  /** Зміна пароля в кабінеті. Поточний обовʼязковий — див. AuthService. */
+  changePassword: (t: string, currentPassword: string, newPassword: string) =>
+    request<{ status: 'changed' }>('/me/password', t, {
+      method: 'PATCH',
+      body: JSON.stringify({ currentPassword, newPassword }),
     }),
 
   /** Зміна власного часового поясу. Доступна обом ролям. */

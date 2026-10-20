@@ -1,6 +1,8 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { BillingModule } from '../billing/billing.module.js';
 import { SchedulingModule } from '../scheduling/scheduling.module.js';
+import { NoopOutboxFlush, OUTBOX_FLUSH } from '../outbox/flush.js';
+import { AuthTokensRepository } from './auth-tokens.repository.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { LocalCredentialsAdapter } from './credentials.adapter.js';
@@ -27,6 +29,8 @@ import { TokenModule } from './token.module.js';
   controllers: [AuthController],
   providers: [
     AuthService,
+    AuthTokensRepository,
+    { provide: OUTBOX_FLUSH, useClass: NoopOutboxFlush },
     LocalCredentialsAdapter,
     { provide: CREDENTIALS_PORT, useExisting: LocalCredentialsAdapter },
   ],
@@ -45,7 +49,7 @@ export class AuthModule {}
 @Module({
   imports: [TokenModule],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, AuthTokensRepository],
   exports: [AuthService],
 })
 export class AuthCoreModule {}

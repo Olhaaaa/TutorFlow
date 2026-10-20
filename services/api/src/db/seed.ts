@@ -45,6 +45,9 @@ export async function seed(db: Database): Promise<void> {
     default_price_minor: 50_000,
     cancel_hours: 24,
     payment_deadline_hours: 24,
+    // Демо-викладач одразу підтверджений: листа йому ніхто не надішле, а без
+    // цього він не зміг би увійти — вхід не пускає непідтверджену пошту.
+    email_verified_at: new Date(),
   }).returning('id').executeTakeFirstOrThrow();
 
   // Один студент в іншому поясі — інакше помилки з часовими зонами
